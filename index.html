@@ -200,6 +200,7 @@ nav a[data-v="dnes"]{--accent:var(--plate-blue)}nav a[data-v="trenink"]{--accent
 .ex-top>div{min-width:0;display:flex;flex-direction:column;gap:3px}
 .demo{width:104px;height:84px;border-radius:14px;background:var(--raise);color:var(--fig)}
 .target{font:700 24px/1.1 var(--display);color:var(--accent);font-variant-numeric:tabular-nums}
+.eqs{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}.eqs i{font-style:normal;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--raise);color:var(--accent)}
 .badge{white-space:nowrap;display:inline-block;align-self:flex-start;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--raise);color:var(--muted)}
 .badge.cal{background:color-mix(in srgb,var(--warn) 16%,var(--surface));color:var(--warn)}
 .badge.st{background:color-mix(in srgb,var(--ok) 16%,var(--surface));color:var(--ok)}
@@ -1567,12 +1568,19 @@ async function lookupCode(code){
   const local=allFoods().find(f=>f.code===code);if(local){fSel=local;renderFood();return;}
   const box=document.getElementById("fPanel");box.innerHTML=`<div class="hint">Hledám kód ${code}…</div>`;
   let v={code};
-  if(navigator.onLine){try{const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_cs,brands,nutriments,serving_quantity,quantity`);
-    const j=await r.json();if(j.status===1&&j.product){const p=j.product,n=p.nutriments||{};
-      v={code,n:[p.product_name_cs||p.product_name,p.brands&&p.brands.split(",")[0]].filter(Boolean).join(" · "),kcal:Math.round(n["energy-kcal_100g"]??(n.energy_100g?n.energy_100g/4.184:0)),
-        b:+(n.proteins_100g||0).toFixed(1),t:+(n.fat_100g||0).toFixed(1),s:+(n.carbohydrates_100g||0).toFixed(1),ug:+p.serving_quantity||100,un:p.serving_quantity?"porce":"100 g"};
-      fMsg="";box.innerHTML=`<div class="hint" style="color:var(--ok)">Nalezeno v Open Food Facts. Zkontroluj a ulož.</div>`+newFoodForm(v);bindFood2();return;}}catch(e){}}
-  box.innerHTML=`<div class="hint" style="color:var(--warn)">${navigator.onLine?"Kód v databázi není.":"Jsi offline."} Vyplň hodnoty z obalu, kód se uloží a příště ho appka pozná.</div>`+newFoodForm(v);bindFood2();
+  if(navigator.onLine){try{const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_cs,product_name_pl,product_name_de,brands,nutriments,serving_quantity,quantity`);
+    const j=await r.json();if(j.status===1&&j.product){const p=j.product,n=p.nutriments||{},sq=+p.serving_quantity||0;
+      const g=k=>n[k+"_100g"]!=null?+n[k+"_100g"]:(sq&&n[k+"_serving"]!=null?+n[k+"_serving"]*100/sq:null);
+      const kc=n["energy-kcal_100g"]??(n.energy_100g?n.energy_100g/4.184:null)??(sq&&n["energy-kcal_serving"]!=null?n["energy-kcal_serving"]*100/sq:null);
+      v={code,n:[p.product_name_cs||p.product_name||p.product_name_pl||p.product_name_de,p.brands&&p.brands.split(",")[0]].filter(Boolean).join(" · "),
+        kcal:kc>0?Math.round(kc):"",b:g("proteins")!=null?+g("proteins").toFixed(1):"",t:g("fat")!=null?+g("fat").toFixed(1):"",s:g("carbohydrates")!=null?+g("carbohydrates").toFixed(1):"",ug:sq||100,un:sq?"porce":"100 g"};
+      fMsg="";
+      if(!(kc>0)){box.innerHTML=`<div class="hint" style="color:var(--warn)">${v.n?`<b>${v.n}</b> je v databázi, ale`:"V databázi"} chybí výživové hodnoty. Vyfoť tabulku na obalu, přečtu ji (čeština, polština, němčina, slovenština, angličtina…).</div>
+        <label class="btn">Vyfotit tabulku<input type="file" id="ocrIn" accept="image/*" capture="environment" hidden></label><div id="ocrOut"></div>
+        <div class="hint">Nebo hodnoty opiš:</div><div id="nfWrap">${newFoodForm(v)}</div>`;bindFood2();return;}
+      box.innerHTML=`<div class="hint" style="color:var(--ok)">Nalezeno v Open Food Facts. Zkontroluj a ulož.</div>`+newFoodForm(v);bindFood2();return;}}catch(e){}}
+  box.innerHTML=`<div class="hint" style="color:var(--warn)">${navigator.onLine?"Kód v databázi není.":"Jsi offline."} Vyfoť tabulku na obalu, nebo hodnoty opiš. Kód se uloží a příště ho appka pozná.</div>
+    <label class="btn">Vyfotit tabulku<input type="file" id="ocrIn" accept="image/*" capture="environment" hidden></label><div id="ocrOut"></div><div id="nfWrap">${newFoodForm(v)}</div>`;bindFood2();
 }
 
 /* ---------- foto tabulky na obalu (OCR v telefonu) ---------- */
@@ -1586,9 +1594,11 @@ function parseLabel(txt){
   const num="(\\d{1,3}(?:\\.\\d{1,2})?)";
   const kw=(words)=>{const m=t.match(new RegExp("(?:"+words+")[^\\d\\n]{0,30}"+num));return m?parseFloat(m[1]):null;};
   let kcal=null;const km=t.match(/(\d{2,4}(?:\.\d)?)\s*kcal/);if(km)kcal=parseFloat(km[1]);
-  const r={kcal,b:kw("bílkoviny|bilkoviny|eiwei(?:ß|ss)|protein[a-z]*|białko|protéines"),s:kw("sacharidy|kohlenhydrate|carbohydrate[s]?|węglowodany|glucides"),
-    t:kw("(?:^|\\n)\\s*(?:tuky|tuk|fett|fat|tłuszcz|matières grasses|lipides)"),sugar:kw("cukry|zucker|sugars|cukry|sucres"),sat:kw("nasycené|gesättigte|saturates|nasycone|saturés"),
-    fiber:kw("vláknina|ballaststoffe|fibre|fiber|błonnik|fibres"),salt:kw("sůl|salz|salt|sól|sel\\b")};
+  const r={kcal,b:kw("b[ií]lkoviny|bielkoviny|eiwei(?:ß|ss)|protein[a-z]*|bia[lł]ko|prot[ée]ines|proteine|prote[ií]nas|feh[ée]rje|eiwitten"),
+    s:kw("sacharidy|kohlenhydrate|carbohydrate[s]?|w[ęe]glowodany|glucides|carboidrati|hidratos|sz[ée]nhidr[áa]t|koolhydraten"),
+    t:kw("(?:^|\\n)\\s*(?:tuky|tuk|fett|fat|t[łl]uszcz|mati[èe]res grasses|lipides|grassi|grasas|zs[ií]r|vetten)"),sugar:kw("cukry|zucker|sugars|sucres|zuccheri|az[úu]cares|cukrok|cukor|suikers"),
+    sat:kw("nasycen[éeá]|gesättigte|ges[aä]ttigte|saturates|nasycone|satur[ée]s|saturi|saturados|tel[ií]tett|verzadigde"),
+    fiber:kw("vl[áa]knina|ballaststoffe|fibre|fiber|b[łl]onnik|fibres|fibra|rost\\b|vezels"),salt:kw("s[ůu]l\\b|so[ľl]\\b|salz|salt|s[óo]l\\b|sel\\b|sale|sal\\b|s[óo]\\b|zout")};
   const have=["b","s","t"].filter(k=>r[k]!=null).length;
   if(have>=3||kcal==null)return r;
   // podle pořadí: první číslo s "g" na každém řádku za prvním řádkem s kcal; zkusí všechny kcal a posuny
@@ -1605,12 +1615,15 @@ function parseLabel(txt){
   if(best&&best.err<.08){Object.assign(r,best.o);r.kcal=best.kc;}
   return r;
 }
+const OCR_LANGS="ces+slk+pol+deu+eng";
 async function readLabel(file){
   const out=document.getElementById("ocrOut");out.innerHTML=`<div class="hint">Čtu obal… může to trvat 10–30 s.</div>`;
   try{await loadTess();}catch(e){out.innerHTML=`<div class="hint" style="color:var(--warn)">Čtečku se nepodařilo stáhnout. Poprvé to chce internet.</div>`;return;}
-  try{const r=await Tesseract.recognize(file,"ces+deu+eng");const v=parseLabel(r.data.text);
-    const found=["kcal","b","s","t"].filter(k=>v[k]!=null).length;
-    out.innerHTML=`<div class="hint" style="color:${found>=3?"var(--ok)":"var(--warn)"}">${found>=3?"Hodnoty přečtené, zkontroluj je.":"Přečetl jsem jen část, doplň zbytek."} Doplň název.</div>`+newFoodForm({kcal:v.kcal??"",b:v.b??"",s:v.s??"",t:v.t??""});bindFood2();
+  try{const r=await Tesseract.recognize(file,OCR_LANGS);const v=parseLabel(r.data.text);
+    const found=["kcal","b","s","t"].filter(k=>v[k]!=null).length,el=id=>document.getElementById(id);
+    const msg=`<div class="hint" style="color:${found>=3?"var(--ok)":"var(--warn)"}">${found>=3?"Hodnoty přečtené, zkontroluj je.":"Přečetl jsem jen část, doplň zbytek."}</div>`;
+    if(el("nf-kcal")){[["nf-kcal","kcal"],["nf-b","b"],["nf-s","s"],["nf-t","t"]].forEach(([id,k])=>{if(v[k]!=null)el(id).value=v[k];});out.innerHTML=msg+(el("nf-n").value?"":`<div class="hint">Doplň název.</div>`);el("nf-kcal").scrollIntoView({block:"center"});}
+    else{out.innerHTML=msg+`<div class="hint">Doplň název.</div>`+newFoodForm({kcal:v.kcal??"",b:v.b??"",s:v.s??"",t:v.t??""});bindFood2();}
   }catch(e){out.innerHTML=`<div class="hint" style="color:var(--warn)">Fotku se nepodařilo přečíst. Zkus ji vyfotit rovně a ostře, nebo zadej hodnoty ručně.</div>`;}
 }
 
@@ -1730,8 +1743,10 @@ function scaledItems(m,k){return m.items.map(([n,g])=>[n,Math.round((fixedFood(n
 /* ---------- kuchyně a generované recepty ---------- */
 const KIT={airfryer:"Airfryer",plotna:"Indukce / plotna",panev:"Pánev",hrnec:"Hrnec",trouba:"Trouba",mikro:"Mikrovlnka",mixer:"Mixér",konvice:"Rychlovarná konvice"};
 const kitchen=()=>new Set((PROFILE&&PROFILE.kuchyne)||["airfryer","plotna","panev","hrnec","mikro","konvice"]);
-FOODS.push(F("Kuskus vařený",112,3.8,.2,23,["porce",250]),F("Batáty",86,1.6,.1,20,["porce",300]));
-Object.assign(PRICE,{"Kuskus vařený":30,"Batáty":60});
+FOODS.push(F("Kuskus vařený",112,3.8,.2,23,["porce",250]),F("Batáty",86,1.6,.1,20,["porce",300]),
+ F("Hranolky mražené",150,2.5,5,23,["porce",200]),F("Bulgur vařený",83,3.1,.2,18.6,["porce",250]),F("Rýžové nudle vařené",108,1.8,.2,24,["porce",250]),
+ F("Vepřová panenka",120,21,4,0,["porce",200]),F("Krevety",80,18,1,0,["porce",200]));
+Object.assign(PRICE,{"Kuskus vařený":30,"Batáty":60,"Hranolky mražené":60,"Bulgur vařený":30,"Rýžové nudle vařené":40,"Vepřová panenka":220,"Krevety":400});
 // co potřebují ručně psaná jídla (alternativy: stačí splnit jednu skupinu)
 const HAND_REQ={"Ovesná kaše s proteinem a banánem":[["mikro"],["hrnec","plotna"]],"Vajíčka se šunkou a chlebem":[["panev","plotna"],["airfryer"]],"Proteinové lívance z airfryeru":[["airfryer","mixer"]],
  "Omeleta s mozzarellou v tortille":[["panev","plotna"]],"Chléb s vejci a šunkou":[["hrnec","plotna"],["konvice"]],"Vejce natvrdo a chléb":[["hrnec","plotna"]],
@@ -1747,13 +1762,17 @@ const PROT=[
  {f:"Kuřecí prsa",g:200,nm:"Kuřecí prsa",af:[190,14],pan:8,tr:20,frz:1},{f:"Kuřecí stehna bez kosti",g:220,nm:"Kuřecí stehna",af:[190,22],pan:12,tr:30,frz:1},
  {f:"Krůtí prsa",g:200,nm:"Krůtí prsa",af:[190,14],pan:8,tr:20,frz:1},{f:"Hovězí mleté",g:150,nm:"Hovězí mleté maso",pan:8,frz:1,mince:1},
  {f:"Losos",g:150,nm:"Losos",af:[200,10],pan:8,tr:15},{f:"Treska",g:200,nm:"Treska",af:[180,10],pan:6,tr:15},
- {f:"Tuňák ve vlastní šťávě",g:130,nm:"Tuňák",raw:1},{f:"Cizrna vařená",g:240,nm:"Cizrna",af:[200,15],pan:6,frz:1,veg:1}];
+ {f:"Tuňák ve vlastní šťávě",g:130,nm:"Tuňák",raw:1},{f:"Cizrna vařená",g:240,nm:"Cizrna",af:[200,15],pan:6,frz:1,veg:1},
+ {f:"Vepřová panenka",g:200,nm:"Vepřová panenka",af:[200,12],pan:8,tr:20,frz:1},{f:"Krevety",g:200,nm:"Krevety",af:[200,7],pan:4,tr:10}];
 const CARB=[
  {f:"Rýže vařená",g:250,ph:"s rýží",how:K=>K.has("hrnec")&&K.has("plotna")?"Rýži propláchni. 1 díl rýže + 2 díly vody, osol, přiveď k varu, pak na nejnižší stupeň pod pokličkou 12 min a 5 min nech dojít.":K.has("mikro")?"Rýže do mikrovlnky: 1 díl rýže + 2 díly vody v misce, 12 min na plný výkon, pak 5 min nech stát.":null,frz:1},
  {f:"Brambory",g:350,ph:"s bramborami",how:K=>K.has("airfryer")?"Brambory nakrájej na měsíčky, lžíce oleje, sůl. Airfryer 200 °C 20 min, v půlce protřepat.":K.has("hrnec")&&K.has("plotna")?"Brambory oloupej, nakrájej a vař v osolené vodě 15–18 min.":K.has("trouba")?"Brambory na měsíčky, olej, sůl, trouba 210 °C 30 min.":null},
  {f:"Těstoviny vařené",g:250,ph:"s těstovinami",how:K=>K.has("hrnec")&&K.has("plotna")?"Těstoviny vař v osolené vodě podle obalu, většinou 8–11 min.":null,frz:1},
  {f:"Kuskus vařený",g:250,ph:"s kuskusem",how:K=>K.has("konvice")||(K.has("hrnec")&&K.has("plotna"))?"Kuskus zalij stejným objemem vroucí vody, osol, přikryj a nech 5 min. Načechrej vidličkou.":null,frz:1},
  {f:"Batáty",g:300,ph:"s batáty",how:K=>K.has("airfryer")?"Batáty na kostky, lžíce oleje, sůl. Airfryer 200 °C 18 min.":K.has("trouba")?"Batáty na kostky, olej, sůl, trouba 210 °C 25 min.":null,frz:1},
+ {f:"Hranolky mražené",g:200,ph:"s hranolky",how:K=>K.has("airfryer")?"Mražené hranolky do airfryeru 200 °C 15–18 min, 2× protřepat. Osol až na konci.":K.has("trouba")?"Hranolky na plech s papírem, trouba 220 °C 20–25 min, v půlce obrátit.":null},
+ {f:"Bulgur vařený",g:250,ph:"s bulgurem",how:K=>K.has("hrnec")&&K.has("plotna")?"Bulgur s dvojnásobkem vody a solí přiveď k varu, 10 min mírně vař pod pokličkou, 5 min nech dojít.":K.has("konvice")?"Jemný bulgur zalij dvojnásobkem vroucí vody, osol, přikryj a nech 15 min.":null,frz:1},
+ {f:"Rýžové nudle vařené",g:250,ph:"s rýžovými nudlemi",how:K=>K.has("konvice")||(K.has("hrnec")&&K.has("plotna"))?"Rýžové nudle zalij vroucí vodou a nech 5 min změknout, pak sceď a propláchni.":null},
  {f:"Tortilla",g:120,ph:"v tortille",how:K=>K.has("panev")&&K.has("plotna")?"Tortillu nahřej 30 s na suché pánvi.":K.has("mikro")?"Tortillu nahřej 20 s v mikrovlnce.":"Tortillu použij studenou.",wrap:1}];
 const VEG=[["brokolicí","brokolici"],["paprikou a cuketou","papriku a cuketu"],["fazolkami","fazolky"],["mrkví a hráškem","mrkev a hrášek"],["špenátem","špenát"],["zeleninovým salátem","zeleninu na salát"]];
 const FLAV=[
@@ -1781,7 +1800,7 @@ const GEN=[];
 })();
 function genSteps(r,K){ // postup pro konkrétní kuchyň, null když to nejde uvařit
   const ph=protHow(r.p,r.fl,K),ch=r.c.how(K);if(!ph||!ch)return null;
-  const vegStep=K.has("airfryer")&&!r.c.wrap&&ph.eq[0]==="airfryer"?`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a přidej do airfryeru na posledních 6 min.`:K.has("panev")&&K.has("plotna")&&r.v[0]!=="zeleninovým salátem"?`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a orestuj 4–5 min na pánvi (nebo spař v hrnci).`:`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a podávej syrovou.`;
+  const vegStep=K.has("airfryer")&&!r.c.wrap&&ph.eq[0]==="airfryer"?`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a přidej do airfryeru na posledních 6 min.`:K.has("panev")&&K.has("plotna")&&r.v[0]!=="zeleninovým salátem"?`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a orestuj 4–5 min na pánvi.`:`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a podávej syrovou.`;
   const steps=[ch,ph.how,vegStep];if(r.fl.sauce)steps.push(r.fl.sauce);steps.push(r.c.wrap?"Všechno zabal do tortill.":"Rozděl do krabiček nebo na talíř.");
   return {steps,time:Math.max(ph.t,15)+8};
 }
@@ -1796,6 +1815,24 @@ function sampleOpts(slot,K,d,keep){
   const all=eligible(slot,K);if(all.length<=12)return all;
   const rnd=seeded(d+slot),hand=all.filter(i=>!MEALLIB[slot][i].gen),gen=all.filter(i=>MEALLIB[slot][i].gen).sort(()=>rnd()-.5);
   const pick=[...hand.slice(0,6),...gen.slice(0,8)];if(keep!=null&&!pick.includes(keep)&&all.includes(keep))pick.push(keep);return pick;
+}
+
+// které nádobí recept opravdu použije (podle postupu pro tvoji kuchyň)
+function eqOf(m,K){
+  if(!m.gen){const req=m.req||HAND_REQ[m.n];if(!req)return [];const g=req.find(g=>g.every(x=>K.has(x)))||req[0];return g.filter(x=>x!=="plotna"||g.length===1);}
+  const st=genSteps(m,K);if(!st)return [];const t=st.steps.join(" "),o=[];
+  if(/airfryer/i.test(t))o.push("airfryer");if(/trouba/i.test(t))o.push("trouba");if(/pánv/i.test(t))o.push("panev");
+  if(/vař|k varu/i.test(t))o.push("hrnec");if(/vroucí/i.test(t)&&!o.includes("hrnec"))o.push(K.has("konvice")?"konvice":"hrnec");if(/mikrovln/i.test(t))o.push("mikro");
+  return o;
+}
+const eqLabel=e=>({plotna:"Indukce",konvice:"Konvice"})[e]||KIT[e]||e;
+const norm=t=>t.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+const stem=t=>t.length>5?t.slice(0,-2):t.length>=4&&/[aeiouy]$/.test(t)?t.slice(0,-1):t;
+// víc slov = recept musí obsahovat všechna (kuře hranolky airfryer)
+function matchQuery(x,K,terms){
+  if(!terms.length)return true;
+  if(!x.hay){const m=x.m,eq=eqOf(m,K);x.hay=norm([m.n,...m.items.map(i=>i[0]),...eq.map(e=>KIT[e]+" "+e),m.tags||"",m.frz?"mrazak zamrazit":"",eq.length?"":"bez vareni studene"].join(" ")).split(/[^a-z0-9]+/);}
+  return terms.every(t=>x.hay.some(w=>w.startsWith(t)));
 }
 
 /* ---------- mrazák ---------- */
@@ -1820,19 +1857,20 @@ function renderCook(){
   if(!PROFILE){location.hash="#start";return;}
   document.documentElement.style.setProperty("--accent","var(--plate-green)");
   if(rSel)return renderRecipe();
-  const K=kitchen(),all=recipeList(),q=rQuery.toLowerCase().trim();
-  const fl={vse:()=>true,mraz:x=>x.m.frz,rychle:x=>recipeTime(x.m,K)<=20,airfryer:x=>/airfryer/.test(x.m.tags),bez:x=>/bez vareni|obchod/.test(x.m.tags)}[rFilter];
-  const list=all.filter(fl).filter(x=>!q||x.m.n.toLowerCase().includes(q));
+  const K=kitchen(),all=recipeList(),terms=norm(rQuery).split(/[^a-z0-9]+/).filter(Boolean).map(stem);
+  const tools=Object.keys(KIT).filter(k=>K.has(k)&&k!=="plotna");
+  const fl=rFilter.startsWith("eq:")?(x=>eqOf(x.m,K).includes(rFilter.slice(3))):({vse:()=>true,mraz:x=>x.m.frz,rychle:x=>recipeTime(x.m,K)<=20,bez:x=>!eqOf(x.m,K).length}[rFilter]||(()=>true));
+  const list=all.filter(fl).filter(x=>matchQuery(x,K,terms));
   document.getElementById("hTitle").textContent="Vaření";
   document.getElementById("hSub").textContent=`${all.length} receptů pro tvoji kuchyň`;
   const fz=freezer();
   document.getElementById("view").innerHTML=`
   ${fz.length?`<section class="card"><div class="row between"><b>V mrazáku</b><span class="hint">${fz.reduce((a,x)=>a+x.porce,0)} porcí</span></div><div class="hist">${fz.map(x=>`<div class="it"><span>${x.n}<br><span class="hint">${x.porce}× porce, zamraženo ${new Date(x.ts).toLocaleDateString("cs-CZ")}</span></span><button class="arrow wide" data-eat="${encodeURIComponent(x.n)}">Sníst porci</button></div>`).join("")}</div></section>`:""}
   ${rMsg?`<div class="hint" style="color:var(--ok);text-align:center">${rMsg}</div>`:""}
-  <section class="card"><input type="search" id="rSearch" placeholder="Hledat recept: kuře, losos, kari…" value="${rQuery.replace(/"/g,"&quot;")}" aria-label="Hledat recept">
-    <div class="quick hscroll">${[["vse","Vše"],["mraz","Do mrazáku"],["rychle","Do 20 min"],["airfryer","Airfryer"],["bez","Bez vaření"]].map(([k,t])=>`<button class="qf" data-rf="${k}" aria-pressed="${rFilter===k}">${t}</button>`).join("")}</div>
-    <div class="hint">${list.length} receptů. Nádobí si nastavíš v <a href="#profil">Profilu</a>.</div>
-    <div class="hist" id="rList">${list.slice(0,rShow).map(x=>{const t=mealTotals(x.m);return `<button class="frow" data-recipe="${encodeURIComponent(x.m.n)}"><span>${x.m.n}<br><span class="hint">${Math.round(t.kcal)} kcal · ${Math.round(t.b)} g bílk. · ${money(t.cena)} · ${recipeTime(x.m,K)} min${x.m.frz?" · do mrazáku":""}</span></span><span class="chev">›</span></button>`;}).join("")||`<div class="empty">Nic nenalezeno. Zkus jiné slovo nebo filtr.</div>`}</div>
+  <section class="card"><input type="search" id="rSearch" placeholder="Víc slov najednou: kuře hranolky airfryer" value="${rQuery.replace(/"/g,"&quot;")}" aria-label="Hledat recept">
+    <div class="quick hscroll">${[["vse","Vše"],["mraz","Do mrazáku"],["rychle","Do 20 min"],["bez","Bez vaření"],...tools.map(k=>["eq:"+k,eqLabel(k)])].map(([k,t])=>`<button class="qf" data-rf="${k}" aria-pressed="${rFilter===k}">${t}</button>`).join("")}</div>
+    <div class="hint">${list.length} ${list.length===1?"recept":list.length>1&&list.length<5?"recepty":"receptů"}${terms.length>1?" obsahuje všechno, co hledáš":""}. Nádobí si nastavíš v <a href="#profil">Profilu</a>.</div>
+    <div class="hist" id="rList">${list.slice(0,rShow).map(x=>{const t=mealTotals(x.m);return `<button class="frow" data-recipe="${encodeURIComponent(x.m.n)}"><span>${x.m.n}<br><span class="hint">${Math.round(t.kcal)} kcal · ${Math.round(t.b)} g bílk. · ${money(t.cena)} · ${recipeTime(x.m,K)} min${x.m.frz?" · do mrazáku":""}</span><span class="eqs">${(eqOf(x.m,K).length?eqOf(x.m,K).map(eqLabel):["Bez vaření"]).map(e=>`<i>${e}</i>`).join("")}</span></span><span class="chev">›</span></button>`;}).join("")||`<div class="empty">Nic nenalezeno. Zkus jiné slovo nebo filtr.</div>`}</div>
     ${list.length>rShow?`<button class="btn ghost" id="rMore">Ukázat další</button>`:""}</section>`;
   const s=document.getElementById("rSearch");s.oninput=()=>{rQuery=s.value;rShow=30;const p=s.selectionStart;renderCook();const n=document.getElementById("rSearch");n.focus();n.setSelectionRange(p,p);};
   document.querySelectorAll("[data-rf]").forEach(b=>b.onclick=()=>{rFilter=b.dataset.rf;rShow=30;renderCook();});
@@ -1847,7 +1885,7 @@ function renderRecipe(){
   document.getElementById("hSub").innerHTML=`<button class="mini" id="rBack">‹ Zpět na recepty</button>`;
   const shops=pl&&pl.date===todayISO()&&pl.shops.length?pl.shops.slice(0,3).map(s=>s.n).join(", "):"v každém supermarketu (Lidl, Penny, Albert, Kaufland…)";
   document.getElementById("view").innerHTML=`<section class="card">
-    <div class="row">${m.gen?[...new Set(protHow(m.p,m.fl,K).eq.concat(m.c.how(K)&&/hrnec|Vař|vroucí/.test(m.c.how(K))?["hrnec"]:[]))].map(e=>`<span class="badge">${KIT[e]||e}</span>`).join(""):""}<span class="badge">${recipeTime(m,K)} min</span>${m.frz?`<span class="badge st">Jde zamrazit</span>`:""}</div>
+    <div class="row">${(eqOf(m,K).length?eqOf(m,K).map(eqLabel):["Bez vaření"]).map(e=>`<span class="badge">${e}</span>`).join("")}<span class="badge">${recipeTime(m,K)} min</span>${m.frz?`<span class="badge st">Jde zamrazit</span>`:""}</div>
     <div class="grp"><span class="lbl">Kolik porcí uvaříš</span><div class="stepper"><button id="rMinus" aria-label="Méně porcí">−</button><input type="number" id="rN" value="${n}" aria-label="Počet porcí"><button id="rPlus" aria-label="Víc porcí">+</button></div></div>
     <div class="grp"><span class="lbl">Jedna porce</span><div class="macros4"><div><b>${Math.round(t.kcal)}</b><span>kcal</span></div><div><b>${Math.round(t.b)}</b><span>bílkoviny</span></div><div><b>${Math.round(t.s)}</b><span>sacharidy</span></div><div><b>${money(t.cena)}</b><span>cena</span></div></div></div>
     <div class="mbar"><div class="row between"><span>Nákup na ${n} ${n===1?"porci":n<5?"porce":"porcí"}</span><b>cca ${money(t.cena*n)}</b></div></div>
@@ -2002,7 +2040,7 @@ function renderShop(){
     if(v.kcal>0){v.missing=false;if(v.src!=="foto")v.src="ruka";}vEditOpen=false;renderShop();};
   const vo=document.getElementById("vOcr");if(vo)vo.onchange=async()=>{const file=vo.files[0];if(!file)return;const out=document.getElementById("vOcrOut");out.innerHTML=`<div class="hint">Čtu tabulku… 10–30 s.</div>`;
     try{await loadTess();}catch(e){out.innerHTML=`<div class="hint" style="color:var(--warn)">Čtečku se nepodařilo stáhnout, poprvé to chce internet.</div>`;return;}
-    try{const r=await Tesseract.recognize(file,"ces+deu+eng+pol+fra");const p=parseLabel(r.data.text),v=scanVerdict;let n=0;for(const k of ["kcal","b","s","sugar","t","sat","fiber","salt"])if(p[k]!=null){v[k]=p[k];n++;}
+    try{const r=await Tesseract.recognize(file,OCR_LANGS);const p=parseLabel(r.data.text),v=scanVerdict;let n=0;for(const k of ["kcal","b","s","sugar","t","sat","fiber","salt"])if(p[k]!=null){v[k]=p[k];n++;}
       if(v.kcal>0&&n>=4){v.missing=false;v.src="foto";renderShop();}else{out.innerHTML=`<div class="hint" style="color:var(--warn)">Přečetl jsem jen část. Doplň zbytek ručně a klepni Posoudit.</div>`;
         ["kcal","b","s","sugar","t","sat","fiber","salt"].forEach(k=>{const el=document.getElementById("vv-"+k);if(el&&v[k]!=null)el.value=v[k];});}}
     catch(e){out.innerHTML=`<div class="hint" style="color:var(--warn)">Fotku se nepodařilo přečíst. Vyfoť ji rovně a ostře.</div>`;}};
