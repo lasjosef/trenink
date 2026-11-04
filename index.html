@@ -626,20 +626,29 @@ const API="https://www.googleapis.com/drive/v3",UP="https://www.googleapis.com/u
 let gisLoading=null,syncState="idle",syncErr="",needPass=null;
 const useDrive=()=>!!(PROFILE&&PROFILE.uloziste==="google"&&CLIENT_ID);
 const tok=()=>{const t=LS.get("tr4_token",null);return t&&t.exp>Date.now()+60000?t.v:null;};
-function loadGIS(){
+function loadGIS_unused(){
   if(window.google&&google.accounts)return Promise.resolve();
   if(gisLoading)return gisLoading;
   gisLoading=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.async=true;s.onload=res;s.onerror=()=>{gisLoading=null;rej(new Error("Přihlášení Google se nenačetlo"));};document.head.appendChild(s);});
   return gisLoading;
 }
+// Přihlášení přesměrováním: funguje i v Brave a v appce na ploše (okno s přihlášením se tu nezavírá samo).
+const REDIRECT=location.origin+location.pathname;
 function login(){
-  return new Promise(async(res,rej)=>{
-    try{await loadGIS();}catch(e){return rej(e);}
-    const tc=google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:"https://www.googleapis.com/auth/drive.file",
-      callback:r=>{if(r.error)return rej(new Error("Přihlášení odmítnuto"));LS.set("tr4_token",{v:r.access_token,exp:Date.now()+(r.expires_in||3600)*1000});LS.set("tr4_linked",true);res();},
-      error_callback:e=>rej(new Error(e&&e.type==="popup_closed"?"Přihlášení zavřeno":"Přihlášení se nepovedlo"))});
-    tc.requestAccessToken({prompt:LS.get("tr4_linked",false)?"":"consent"});
-  });
+  const st=Math.random().toString(36).slice(2);LS.set("tr4_oauth_state",{st,back:location.hash||"#dnes"});
+  const q=new URLSearchParams({client_id:CLIENT_ID,redirect_uri:REDIRECT,response_type:"token",scope:"https://www.googleapis.com/auth/drive.file",state:st,include_granted_scopes:"true"});
+  if(!LS.get("tr4_linked",false))q.set("prompt","consent");
+  location.href="https://accounts.google.com/o/oauth2/v2/auth?"+q.toString();
+  return new Promise(()=>{}); // stránka odchází na Google
+}
+function oauthReturn(){ // návrat z Googlu: #access_token=…&state=… nebo #error=…
+  const h=location.hash.slice(1);if(!/(^|&)(access_token|error)=/.test(h))return false;
+  const p=new URLSearchParams(h),saved=LS.get("tr4_oauth_state",null);LS.del("tr4_oauth_state");
+  const back=(saved&&saved.back)||"#dnes";
+  if(p.get("access_token")&&saved&&p.get("state")===saved.st){
+    LS.set("tr4_token",{v:p.get("access_token"),exp:Date.now()+(+p.get("expires_in")||3600)*1000});LS.set("tr4_linked",true);
+  }else{syncState="err";syncErr=p.get("error")==="access_denied"?"Přístup k Disku jsi nepovolil":"Přihlášení se nepovedlo";}
+  history.replaceState(null,"",REDIRECT+back);return true;
 }
 async function g(url,opt={}){
   const t=tok();if(!t)throw {auth:true};
@@ -1209,7 +1218,7 @@ let weighOpen=false;
 function renderWeighNote(){
   const el=document.getElementById("weighNote");
   if(!PROFILE||view()==="start"||!needWeigh()||Date.now()-LS.get("tr4_weigh_snooze",0)<3*864e5){el.hidden=true;return;}
-  const w=weighins(),txt=`Váha naposledy před ${Math.round((Date.now()-w[w.length-1].ts)/864e5)} dny`;
+  const w=weighins(),txt=w.length?`Váha naposledy před ${Math.round((Date.now()-w[w.length-1].ts)/864e5)} dny`:"Zatím žádná zapsaná váha";
   el.hidden=false;
   el.innerHTML=weighOpen?`<div class="bwrow"><input type="number" inputmode="decimal" step="0.1" id="bwIn" value="${bw()}" aria-label="Tělesná váha kg"><span class="hint">kg</span><button class="mini" id="bwSave">Uložit</button><button class="mini" id="bwLater" style="color:var(--muted)">Později</button></div>`
     :`<button class="mini" id="bwOpen" style="color:var(--muted);font-weight:500">${txt}. Zapsat ›</button>`;
@@ -1229,7 +1238,8 @@ if("serviceWorker" in navigator){
   navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!had){had=true;return;}
     const n=document.getElementById("updNote");n.hidden=false;n.innerHTML=`Je nová verze appky. <button class="mini" id="updBtn">Obnovit</button>`;document.getElementById("updBtn").onclick=()=>location.reload();});
 }
-render();sync(false);
+const fromGoogle=oauthReturn();
+render();sync(fromGoogle&&!!tok());
 
 </script>
 </body>
