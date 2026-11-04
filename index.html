@@ -1775,7 +1775,7 @@ function renderPlan(){
     el.addEventListener("touchstart",e=>{x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});
     el.addEventListener("touchend",e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5)swapPlan(el.dataset.pswipe,dx<0?1:-1);});});
   document.querySelectorAll("[data-plog]").forEach(b=>b.onclick=()=>{const sl=b.dataset.plog,i=PLAN_SLOTS.indexOf(sl),m=MEALLIB[sl][p.pick[i]];
-    for(const [n,g] of scaledItems(m,p.k)){const f=FOODS.find(x=>x.n===n);logFoodRaw(f,g,sl,0,curSym(),null); // odhad ceny z plánu nepočítáme do výdajů}
+    for(const [n,g] of scaledItems(m,p.k)){const f=FOODS.find(x=>x.n===n);logFoodRaw(f,g,sl,0,curSym(),null);/* odhad ceny z plánu nepočítáme do výdajů */}
     p.logged=Object.assign({},p.logged||{},{[sl]:true});LS.set("tr4_plan_"+d,p);fMsg=`${MEALS[sl]} zapsaná do deníku.`;renderPlan();sync(false);});
   bindShops(renderPlan);fMsg="";
 }
