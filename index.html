@@ -249,6 +249,12 @@ details.card>summary{cursor:pointer;list-style:none}
 a.card.link,a.link{text-decoration:none;color:var(--fg)}
 .chev{color:var(--muted);font-size:20px;line-height:1}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+#fPanel{display:flex;flex-direction:column;gap:22px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.quick.hscroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px}
+.quick.hscroll::-webkit-scrollbar{display:none}.quick.hscroll .qf{flex:0 0 auto}
+.stepper{gap:10px}
+details>summary.mini{list-style:none;cursor:pointer}
 </style>
 </head>
 <body>
@@ -1465,11 +1471,11 @@ function panelHTML(meal){
 }
 function amountHTML(f,meal){
   const last=records().filter(r=>r.typ==="jidlo"&&r.fid===f.id).pop(),g=last?last.g:f.u[1],price=last?last.price||"":(f.price||""),u=f.ml?"ml":"g";
-  return `<div class="hint">${Math.round(f.kcal)} kcal a ${fmt(f.b)} g bílkovin ve 100 ${u}</div>
+  return `<div class="grp"><span class="lbl">Množství v ${u==="ml"?"mililitrech":"gramech"}</span>
    <div class="stepper"><button id="stMinus" aria-label="Méně">−</button><input type="number" inputmode="decimal" id="am-g" value="${g}" aria-label="Množství v ${u}"><button id="stPlus" aria-label="Víc">+</button></div>
-   <div class="quick">${[.5,1,1.5,2,3].map(q=>`<button class="qf" data-portion="${f.u[1]*q}">${fmt(q)} ${f.u[0]}<span>${fmt(f.u[1]*q)} ${u}</span></button>`).join("")}</div>
-   <div class="macros4" id="amInfo"></div>
-   <span class="lbl">Do kterého jídla</span><div class="quick" id="amMeals">${Object.entries(MEALS).map(([k,t])=>`<button class="qf" data-meal="${k}" aria-pressed="${k===meal}">${t}</button>`).join("")}</div>
+   <div class="quick hscroll">${[.5,1,1.5,2,3].map(q=>`<button class="qf" data-portion="${f.u[1]*q}">${fmt(q)} ${f.u[0]}<span>${fmt(f.u[1]*q)} ${u}</span></button>`).join("")}</div></div>
+   <div class="grp"><span class="lbl">Tahle porce má</span><div class="macros4" id="amInfo"></div><span class="hint">${Math.round(f.kcal)} kcal a ${fmt(f.b)} g bílkovin ve 100 ${u}</span></div>
+   <div class="grp"><span class="lbl">Do kterého jídla</span><div class="quick" id="amMeals">${Object.entries(MEALS).map(([k,t])=>`<button class="qf" data-meal="${k}" aria-pressed="${k===meal}">${t}</button>`).join("")}</div></div>
    <details ${price?"open":""}><summary class="mini">Cena (nepovinné)</summary><div class="grid2" style="margin-top:8px">${field("am-price","Cena",price)}<div class="fld"><span>Měna</span><select id="am-cur"><option ${curMode()!=="bw"?"selected":""}>Kč</option><option ${curMode()==="bw"?"selected":""}>€</option></select></div></div></details>
    <button class="btn" id="amSave">Přidat do: ${MEALS[meal]}</button>`;
 }
