@@ -261,6 +261,9 @@ details>summary.mini{list-style:none;cursor:pointer}
 .ck.on{background:var(--ok);border-color:var(--ok)}
 .card.slide-l{animation:slideL .22s ease-out}.card.slide-r{animation:slideR .22s ease-out}
 .editbox input,.editbox select{background:var(--surface)}
+ol.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px;font-size:15px}
+ol.steps li::marker{font-weight:700;color:var(--accent)}
+.subnav a{font-size:13px}
 </style>
 </head>
 <body>
@@ -773,7 +776,7 @@ function multipart(meta,content){
   const b="trb"+Math.random().toString(36).slice(2);
   return {headers:{"Content-Type":"multipart/related; boundary="+b},body:`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(content)}\r\n--${b}--`};
 }
-function fileName(r){if(r.id==="profil")return "profil.json";if(r.typ==="jidlo")return `jidlo ${r.date} ${r.id}.json`;if(r.typ==="vydaj")return `vydaj ${r.date} ${r.id}.json`;if(r.typ==="potravina")return `potravina ${r.id}.json`;if(r.typ==="den")return `den ${r.date}.json`;if(r.typ==="vaha")return `vaha ${r.date}.json`;if(r.typ==="mikro")return `kliky ${r.date} ${r.id}.json`;return `${r.date} ${r.nazev}.json`;}
+function fileName(r){if(r.id==="profil")return "profil.json";if(r.typ==="jidlo")return `jidlo ${r.date} ${r.id}.json`;if(r.typ==="vydaj")return `vydaj ${r.date} ${r.id}.json`;if(r.typ==="potravina")return `potravina ${r.id}.json`;if(r.typ==="den")return `den ${r.date}.json`;if(r.typ==="mrazak")return "mrazak.json";if(r.typ==="vaha")return `vaha ${r.date}.json`;if(r.typ==="mikro")return `kliky ${r.date} ${r.id}.json`;return `${r.date} ${r.nazev}.json`;}
 async function payload(r){const key=encOn()?await loadKey():null;return key?await encJSON(r,key):r;}
 async function sync(interactive){
   if(!useDrive()){syncState=PROFILE&&PROFILE.uloziste==="google"&&!CLIENT_ID?"nocfg":"local";renderStatus();return;}
@@ -1123,7 +1126,7 @@ function lineChart(p){
 /* ---------- úvodní průvodce a profil ---------- */
 const ALL_PLATES=[25,20,15,10,5,2.5,1.25];
 const defaultProfile=()=>({jmeno:"",uloziste:"local",sifrovat:false,vaha:"",vyska:"",vek:"",pohlavi:"m",cil:"nabrat",uroven:"mir",mode:"gym",
-  rot:{on:false,start:todayISO(),away:3,home:2},kotouce:[25,20,15,10,5,2.5],tyc:20,krokJedn:2,krokKladka:2.5,max:{bench:{kg:"",reps:""},squat:{kg:"",reps:""},dl:{kg:"",reps:""},pull:"",push:""},rozpocet:"",kurz:25});
+  rot:{on:false,start:todayISO(),away:3,home:2},kuchyne:["airfryer","plotna","panev","hrnec","mikro","konvice"],kotouce:[25,20,15,10,5,2.5],tyc:20,krokJedn:2,krokKladka:2.5,max:{bench:{kg:"",reps:""},squat:{kg:"",reps:""},dl:{kg:"",reps:""},pull:"",push:""},rozpocet:"",kurz:25});
 let OB=LS.get("tr4_ob",null);
 const STEPS=["Vítej","Úložiště","O tobě","Kde cvičíš","Tvoje síla"];
 const opt=(name,val,cur,label,sub="")=>`<button class="choice" data-k="${name}" data-v="${val}" aria-pressed="${String(cur)===String(val)}"><b>${label}</b>${sub?`<span>${sub}</span>`:""}</button>`;
@@ -1143,6 +1146,7 @@ function stepHTML(p,step,inProfile){
   case 3:return `<span class="lbl">Kde teď cvičíš</span><div class="choices">${opt("mode","gym",p.mode,"Posilovna","4× týdně horní a spodní polovina, cca 60 min")}${opt("mode","bw",p.mode,"Vlastní váha","Hřiště, hrazda, podlaha. 3× týdně kruh 30–35 min + kliky přes den + kardio")}</div>
     <label class="switch"><input type="checkbox" id="f-rot" ${p.rot.on?"checked":""}> <span><b>Střídám místa podle kalendáře</b><br><span class="hint">Třeba 3 týdny práce venku s vlastní vahou, pak 2 týdny posilovna. Appka přepne sama.</span></span></label>
     ${p.rot.on?`<div class="grid2">${field("f-rstart","Vlastní váha od",p.rot.start,"date")}${field("f-raway","Týdnů vlastní váha",p.rot.away)}${field("f-rhome","Týdnů posilovna",p.rot.home)}</div>`:""}
+    <span class="lbl">Co máš v kuchyni</span><div class="platechips">${Object.entries(KIT).map(([k,t])=>`<button class="pchip" data-kit="${k}" aria-pressed="${(p.kuchyne||[]).includes(k)}">${t}</button>`).join("")}</div>
     <span class="lbl">Kotouče v posilovně (kg)</span><div class="platechips">${ALL_PLATES.map(k=>`<button class="pchip" data-plate="${k}" aria-pressed="${p.kotouce.includes(k)}">${fmt(k)}</button>`).join("")}</div>
     <div class="grid2">${field("f-tyc","Olympijská tyč (kg)",p.tyc)}${field("f-krokj","Krok jednoruček (kg)",p.krokJedn)}${field("f-krokk","Krok na kladce (kg)",p.krokKladka)}</div>`;
   case 4:{const mx=p.max;return `<p class="hint">Nevadí, když nevíš. Appka pak začne opatrně a první 3 tréninky si tě zkalibruje. Stačí kolik dáš teď, ne kdysi.</p>
@@ -1174,7 +1178,8 @@ async function validateStep(p,step){
 }
 function bindChoices(p,rerender){
   document.querySelectorAll(".choice").forEach(b=>b.onclick=()=>{p[b.dataset.k]=b.dataset.v;rerender();});
-  document.querySelectorAll(".pchip").forEach(b=>b.onclick=()=>{const k=+b.dataset.plate;p.kotouce=p.kotouce.includes(k)?p.kotouce.filter(x=>x!==k):[...p.kotouce,k];rerender();});
+  document.querySelectorAll("[data-kit]").forEach(b=>b.onclick=()=>{const k=b.dataset.kit,cur=p.kuchyne||[];p.kuchyne=cur.includes(k)?cur.filter(x=>x!==k):[...cur,k];rerender();});
+  document.querySelectorAll(".pchip[data-plate]").forEach(b=>b.onclick=()=>{const k=+b.dataset.plate;p.kotouce=p.kotouce.includes(k)?p.kotouce.filter(x=>x!==k):[...p.kotouce,k];rerender();});
   ["f-sifra","f-rot"].forEach(id=>{const el=document.getElementById(id);if(el)el.onchange=()=>{if(id==="f-sifra")p.sifrovat=el.checked;else p.rot.on=el.checked;rerender();};});
 }
 function renderStart(){
@@ -1232,7 +1237,7 @@ function renderProfile(){
   document.getElementById("pSave").onclick=async()=>{
     [0,1,2,3,4].forEach(i=>readStep(p,i));readSupps();
     for(const i of [0,1,2,3]){const e=await validateStep(p,i);if(e){document.getElementById("pErr").textContent=e;return;}}
-    const wasStore=PROFILE.uloziste;saveProfile(p);profEdit=null;draft=null;saveDraft();
+    const wasStore=PROFILE.uloziste;if(JSON.stringify(PROFILE.kuchyne)!==JSON.stringify(p.kuchyne)){Object.keys(localStorage).filter(k=>k.startsWith("tr4_plan_")&&k>="tr4_plan_"+todayISO()).forEach(k=>LS.del(k));}saveProfile(p);profEdit=null;draft=null;saveDraft();
     if(p.uloziste==="google"&&wasStore!=="google")[...Object.keys(DB)].forEach(id=>unsynced.add(id)),saveDB();
     document.getElementById("pErr").style.color="var(--ok)";document.getElementById("pErr").textContent="Uloženo.";sync(p.uloziste==="google");
   };
@@ -1689,37 +1694,179 @@ function preferMode(slot,m){const bw=curMode()==="bw",tg=m.tags;
   else if(slot==="vecere"&&/doma/.test(tg))return 10;
   return 0;}
 // hledá kombinaci jídel a jedno společné měřítko porcí, aby seděly kalorie, bílkoviny a rozpočet
-function solvePlan(fixed,avoid){
-  const T=targets(),B=budgetDay(),opts=PLAN_SLOTS.map(sl=>fixed&&fixed[sl]!=null?[fixed[sl]]:MEALLIB[sl].map((_,i)=>i));
-  let best=null;
-  const rec=(i,pick)=>{
-    if(i===PLAN_SLOTS.length){
-      const base=PLAN_SLOTS.map((sl,j)=>MEALLIB[sl][pick[j]]);
-      const fixedK=base.reduce((a,m)=>a+m.items.filter(([n])=>fixedFood(n)).reduce((x,[n,g])=>{const f=FOODS.find(y=>y.n===n);return x+f.kcal*g/100;},0),0);
-      const varK=base.reduce((a,m)=>a+mealTotals(m).kcal,0)-fixedK;
-      const k=Math.max(.7,Math.min(1.45,(T.kcal-fixedK)/Math.max(1,varK)));
-      const tot=base.reduce((a,m)=>{const t=mealTotals(m,k);a.kcal+=t.kcal;a.b+=t.b;a.cena+=t.cena;return a;},{kcal:0,b:0,cena:0});
-      let sc=Math.abs(tot.kcal-T.kcal)/10+Math.max(0,T.b-tot.b)*3+Math.max(0,tot.b-T.b*1.2)*1.2;
-      if(B)sc+=Math.max(0,tot.cena-B)/(inDE()?.15:4);
-      PLAN_SLOTS.forEach((sl,j)=>{sc+=preferMode(sl,base[j]);if(avoid&&avoid[sl]===pick[j])sc+=25;});
-      if(!best||sc<best.sc)best={sc,pick:[...pick],k,tot};return;}
-    for(const o of opts[i]){pick[i]=o;rec(i+1,pick);}
+function solvePlan(fixed,avoid,d){
+  const T=targets(),B=budgetDay(),K=kitchen(),fz=new Set(freezer().map(x=>x.n));
+  const opts=PLAN_SLOTS.map(sl=>{if(fixed&&fixed[sl]!=null)return [fixed[sl]];const o=sampleOpts(sl,K,d||todayISO(),null);
+    MEALLIB[sl].forEach((m,i)=>{if(fz.has(m.n)&&!o.includes(i)&&mealUsable(m,K))o.push(i);});return o.length?o:[0];});
+  // předpočítané části: pevná (restaurace, jídlo od tety) a škálovatelná, ať je hledání rychlé i v telefonu
+  const parts=PLAN_SLOTS.map((sl,j)=>Object.fromEntries(opts[j].map(i=>{const m=MEALLIB[sl][i],o={fk:0,fb:0,fc:0,vk:0,vb:0,vc:0};
+    for(const [n,g] of m.items){const f=FOODS.find(x=>x.n===n);const k=f.kcal*g/100,bb=f.b*g/100,c=priceOf(n,g);if(fixedFood(n)){o.fk+=k;o.fb+=bb;o.fc+=c;}else{o.vk+=k;o.vb+=bb;o.vc+=c;}}
+    o.pen=preferMode(sl,m)+(avoid&&avoid[sl]===i?25:0)+(fz.has(m.n)?-30:0);return [i,o];})));
+  let best=null;const pick=[];
+  const rec=(j,fk,fb,fc,vk,vb,vc,pen)=>{
+    if(j===PLAN_SLOTS.length){
+      const k=Math.max(.7,Math.min(1.45,(T.kcal-fk)/Math.max(1,vk))),kc=fk+vk*k,bb=fb+vb*k,cc=fc+vc*k;
+      let sc=Math.abs(kc-T.kcal)/10+Math.max(0,T.b-bb)*3+Math.max(0,bb-T.b*1.2)*1.2+pen;
+      if(B)sc+=Math.max(0,cc-B)/(inDE()?.15:4);
+      if(!best||sc<best.sc)best={sc,pick:[...pick],k,tot:{kcal:kc,b:bb,cena:cc}};return;}
+    for(const i of opts[j]){const o=parts[j][i];pick[j]=i;rec(j+1,fk+o.fk,fb+o.fb,fc+o.fc,vk+o.vk,vb+o.vb,vc+o.vc,pen+o.pen);}
   };
-  rec(0,[]);return best;
+  rec(0,0,0,0,0,0,0,0);return best;
 }
 function planFor(d){
   let p=LS.get("tr4_plan_"+d,null);
   if(!p||p.v!==2){const prev=LS.get("tr4_plan_"+new Date(new Date(d+"T12:00").getTime()-864e5).toISOString().slice(0,10),null);
     const avoid=prev&&prev.pick?Object.fromEntries(PLAN_SLOTS.map((s,i)=>[s,prev.pick[i]])):null;
-    const b=solvePlan(null,avoid);p={v:2,pick:b.pick,k:b.k,locked:{}};LS.set("tr4_plan_"+d,p);}
+    const b=solvePlan(null,avoid,d);p={v:2,pick:b.pick,k:b.k,locked:{}};LS.set("tr4_plan_"+d,p);}
   return p;
 }
 function replanDay(d,slot,idx){ // uživatel vybral jinou variantu: ta zůstane, ostatní nezamčené se dopočítají
   const p=planFor(d);p.locked[slot]=true;
   const fixed={};PLAN_SLOTS.forEach((s,i)=>{if(p.locked[s])fixed[s]=s===slot?idx:p.pick[i];});
-  const b=solvePlan(fixed,null);p.pick=b.pick;p.k=b.k;LS.set("tr4_plan_"+d,p);return p;
+  const b=solvePlan(fixed,null,d);p.pick=b.pick;p.k=b.k;LS.set("tr4_plan_"+d,p);return p;
 }
 function scaledItems(m,k){return m.items.map(([n,g])=>[n,Math.round((fixedFood(n)?g:g*k)/5)*5]);}
+
+/* ---------- kuchyně a generované recepty ---------- */
+const KIT={airfryer:"Airfryer",plotna:"Indukce / plotna",panev:"Pánev",hrnec:"Hrnec",trouba:"Trouba",mikro:"Mikrovlnka",mixer:"Mixér",konvice:"Rychlovarná konvice"};
+const kitchen=()=>new Set((PROFILE&&PROFILE.kuchyne)||["airfryer","plotna","panev","hrnec","mikro","konvice"]);
+FOODS.push(F("Kuskus vařený",112,3.8,.2,23,["porce",250]),F("Batáty",86,1.6,.1,20,["porce",300]));
+Object.assign(PRICE,{"Kuskus vařený":30,"Batáty":60});
+// co potřebují ručně psaná jídla (alternativy: stačí splnit jednu skupinu)
+const HAND_REQ={"Ovesná kaše s proteinem a banánem":[["mikro"],["hrnec","plotna"]],"Vajíčka se šunkou a chlebem":[["panev","plotna"],["airfryer"]],"Proteinové lívance z airfryeru":[["airfryer","mixer"]],
+ "Omeleta s mozzarellou v tortille":[["panev","plotna"]],"Chléb s vejci a šunkou":[["hrnec","plotna"],["konvice"]],"Vejce natvrdo a chléb":[["hrnec","plotna"]],
+ "Kuře s rýží a zeleninou":[["airfryer","hrnec","plotna"],["panev","hrnec","plotna"]],"Těstoviny s tuňákem":[["hrnec","plotna"]],"Kuřecí wrap":[["airfryer"],["panev","plotna"]],
+ "Losos s bramborami z airfryeru":[["airfryer"]],"Hovězí bowl s rýží":[["panev","hrnec","plotna"]],"Kuřecí stehna s bramborami z airfryeru":[["airfryer"]],
+ "Treska s rýží a zeleninou":[["airfryer","hrnec","plotna"]],"Krůtí prsa s těstovinami":[["panev","hrnec","plotna"]],"Pizza z tortilly":[["airfryer"],["trouba"]],
+ "Burrito bowl":[["panev","hrnec","plotna"]],"Omeleta se zeleninou a chlebem":[["panev","plotna"]]};
+const reqOk=(req,K)=>!req||req.some(g=>g.every(x=>K.has(x)));
+const mealOk=(m,K)=>reqOk(m.req||HAND_REQ[m.n],K);
+
+// stavebnice: bílkovina × příloha × zelenina × chuť
+const PROT=[
+ {f:"Kuřecí prsa",g:200,nm:"Kuřecí prsa",af:[190,14],pan:8,tr:20,frz:1},{f:"Kuřecí stehna bez kosti",g:220,nm:"Kuřecí stehna",af:[190,22],pan:12,tr:30,frz:1},
+ {f:"Krůtí prsa",g:200,nm:"Krůtí prsa",af:[190,14],pan:8,tr:20,frz:1},{f:"Hovězí mleté",g:150,nm:"Hovězí mleté maso",pan:8,frz:1,mince:1},
+ {f:"Losos",g:150,nm:"Losos",af:[200,10],pan:8,tr:15},{f:"Treska",g:200,nm:"Treska",af:[180,10],pan:6,tr:15},
+ {f:"Tuňák ve vlastní šťávě",g:130,nm:"Tuňák",raw:1},{f:"Cizrna vařená",g:240,nm:"Cizrna",af:[200,15],pan:6,frz:1,veg:1}];
+const CARB=[
+ {f:"Rýže vařená",g:250,ph:"s rýží",how:K=>K.has("hrnec")&&K.has("plotna")?"Rýži propláchni. 1 díl rýže + 2 díly vody, osol, přiveď k varu, pak na nejnižší stupeň pod pokličkou 12 min a 5 min nech dojít.":K.has("mikro")?"Rýže do mikrovlnky: 1 díl rýže + 2 díly vody v misce, 12 min na plný výkon, pak 5 min nech stát.":null,frz:1},
+ {f:"Brambory",g:350,ph:"s bramborami",how:K=>K.has("airfryer")?"Brambory nakrájej na měsíčky, lžíce oleje, sůl. Airfryer 200 °C 20 min, v půlce protřepat.":K.has("hrnec")&&K.has("plotna")?"Brambory oloupej, nakrájej a vař v osolené vodě 15–18 min.":K.has("trouba")?"Brambory na měsíčky, olej, sůl, trouba 210 °C 30 min.":null},
+ {f:"Těstoviny vařené",g:250,ph:"s těstovinami",how:K=>K.has("hrnec")&&K.has("plotna")?"Těstoviny vař v osolené vodě podle obalu, většinou 8–11 min.":null,frz:1},
+ {f:"Kuskus vařený",g:250,ph:"s kuskusem",how:K=>K.has("konvice")||(K.has("hrnec")&&K.has("plotna"))?"Kuskus zalij stejným objemem vroucí vody, osol, přikryj a nech 5 min. Načechrej vidličkou.":null,frz:1},
+ {f:"Batáty",g:300,ph:"s batáty",how:K=>K.has("airfryer")?"Batáty na kostky, lžíce oleje, sůl. Airfryer 200 °C 18 min.":K.has("trouba")?"Batáty na kostky, olej, sůl, trouba 210 °C 25 min.":null,frz:1},
+ {f:"Tortilla",g:120,ph:"v tortille",how:K=>K.has("panev")&&K.has("plotna")?"Tortillu nahřej 30 s na suché pánvi.":K.has("mikro")?"Tortillu nahřej 20 s v mikrovlnce.":"Tortillu použij studenou.",wrap:1}];
+const VEG=[["brokolicí","brokolici"],["paprikou a cuketou","papriku a cuketu"],["fazolkami","fazolky"],["mrkví a hráškem","mrkev a hrášek"],["špenátem","špenát"],["zeleninovým salátem","zeleninu na salát"]];
+const FLAV=[
+ {ph:"na česneku a paprice",sp:"sůl, sladkou papriku a česnek"},{ph:"na kari s jogurtem",sp:"sůl a kari koření",extra:["Jogurt bílý",60],sauce:"Na konec vmíchej bílý jogurt s trochou kari."},
+ {ph:"teriyaki",sp:"sůl a pepř",extra:["Med",10],sauce:"Na konec přelij 2 lžícemi sójové omáčky smíchané s medem."},{ph:"po italsku",sp:"sůl, oregano a bazalku",sauce:"Přidej 2 lžíce rajčatového protlaku a trochu vody, prohřej."},
+ {ph:"po mexicku",sp:"sůl, kmín, chilli a uzenou papriku",sauce:"Pokapej limetkou."},{ph:"s citronem a pepřem",sp:"sůl, hodně pepře a citronovou kůru",sauce:"Pokapej citronem."},
+ {ph:"na BBQ",sp:"sůl a uzenou papriku",sauce:"Na konec potři 2 lžícemi BBQ omáčky."},{ph:"na gyros",sp:"gyros koření",extra:["Jogurt bílý",60],sauce:"K tomu jogurt s česnekem jako tzatziki."}];
+function protHow(p,fl,K){
+  if(p.raw)return {t:0,how:`${p.nm} sceď a ochuť (${fl.sp}).`,eq:[]};
+  if(p.af&&K.has("airfryer"))return {t:p.af[1],how:`${p.nm}${p.veg?" sceď, osuš":" nakrájej na kousky"}, okoř (${fl.sp}) a promíchej s lžičkou oleje. Airfryer ${p.af[0]} °C ${p.af[1]} min, v půlce protřepat.`,eq:["airfryer"]};
+  if(p.pan&&K.has("panev")&&K.has("plotna"))return {t:p.pan,how:`Na pánvi rozehřej lžíci oleje (indukce stupeň 6–7). ${p.nm}${p.mince?"":" nakrájej na kousky,"} okoř (${fl.sp}) a opékej ${p.pan} min${p.mince?", rozdrob vařečkou":", až je propečené"}.`,eq:["panev","plotna"]};
+  if(p.tr&&K.has("trouba"))return {t:p.tr,how:`Trouba 200 °C. ${p.nm} okoř (${fl.sp}), dej na plech s pečicím papírem a peč ${p.tr} min.`,eq:["trouba"]};
+  return null;
+}
+const GEN=[];
+(function(){ // vytvoří všechny kombinace, kuchyně se kontroluje až při použití
+  let vi=0;
+  for(const p of PROT)for(const c of CARB)for(const fl of FLAV){
+    if(p.raw&&c.wrap&&fl.ph==="na kari s jogurtem")continue;
+    const v=VEG[vi++%VEG.length];
+    const items=[[p.f,p.g],[c.f,c.g],["Zelenina mix",c.wrap?120:200]];if(fl.extra)items.push(fl.extra);if(!p.raw&&!p.veg)items.push(["Olivový olej",8]);
+    GEN.push({n:`${p.nm} ${fl.ph} ${c.ph} a ${v[0]}`,items,p,c,fl,v,gen:1,tags:(p.af?"airfryer,":"")+(c.wrap?"s sebou,":"krabicka,")+(p.raw?"bez vareni,":""),
+      frz:!!(p.frz&&c.frz)});
+  }
+})();
+function genSteps(r,K){ // postup pro konkrétní kuchyň, null když to nejde uvařit
+  const ph=protHow(r.p,r.fl,K),ch=r.c.how(K);if(!ph||!ch)return null;
+  const vegStep=K.has("airfryer")&&!r.c.wrap&&ph.eq[0]==="airfryer"?`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a přidej do airfryeru na posledních 6 min.`:K.has("panev")&&K.has("plotna")&&r.v[0]!=="zeleninovým salátem"?`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a orestuj 4–5 min na pánvi (nebo spař v hrnci).`:`${r.v[1][0].toUpperCase()+r.v[1].slice(1)} nakrájej a podávej syrovou.`;
+  const steps=[ch,ph.how,vegStep];if(r.fl.sauce)steps.push(r.fl.sauce);steps.push(r.c.wrap?"Všechno zabal do tortill.":"Rozděl do krabiček nebo na talíř.");
+  return {steps,time:Math.max(ph.t,15)+8};
+}
+GEN.forEach(r=>{r.how="";r.req=null;});
+MEALLIB.obed.push(...GEN);MEALLIB.vecere.push(...GEN);
+function mealSteps(m,K){if(m.gen){const s=genSteps(m,K);return s?s.steps:null;}return [m.how];}
+const mealUsable=(m,K)=>m.gen?!!genSteps(m,K):mealOk(m,K);
+// jednoduchý deterministický generátor náhody podle data, ať je každý den jiný výběr
+function seeded(str){let h=2166136261;for(const ch of str){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);}return ()=>{h^=h<<13;h^=h>>>17;h^=h<<5;return ((h>>>0)%100000)/100000;};}
+function eligible(slot,K){return MEALLIB[slot].map((m,i)=>[m,i]).filter(([m])=>mealUsable(m,K)).map(([,i])=>i);}
+function sampleOpts(slot,K,d,keep){
+  const all=eligible(slot,K);if(all.length<=12)return all;
+  const rnd=seeded(d+slot),hand=all.filter(i=>!MEALLIB[slot][i].gen),gen=all.filter(i=>MEALLIB[slot][i].gen).sort(()=>rnd()-.5);
+  const pick=[...hand.slice(0,6),...gen.slice(0,8)];if(keep!=null&&!pick.includes(keep)&&all.includes(keep))pick.push(keep);return pick;
+}
+
+/* ---------- mrazák ---------- */
+const freezer=()=>(DB.mrazak&&!DB.mrazak.del&&DB.mrazak.items)||[];
+function setFreezer(items){addRecord({v:4,typ:"mrazak",id:"mrazak",ts:Date.now(),items});}
+function mealByName(n){for(const sl of PLAN_SLOTS)for(const m of MEALLIB[sl])if(m.n===n)return m;return null;}
+function eatPortion(name,meal){
+  const m=mealByName(name);if(!m)return;
+  for(const [n,g] of m.items){const f=FOODS.find(x=>x.n===n);if(f)logFoodRaw(f,g,meal||mealNow(),0,curSym(),null);}
+  const it=freezer().map(x=>({...x}));const x=it.find(y=>y.n===name);if(x){x.porce--;}setFreezer(it.filter(y=>y.porce>0));
+}
+
+/* ---------- obrazovka Vaření ---------- */
+let rSel=null,rPortions=4,rFilter="vse",rQuery="",rShow=30,rMsg="";
+function recipeList(){
+  const K=kitchen(),seen=new Set(),out=[];
+  for(const sl of ["obed","vecere","snidane","svacina","svacina2"])for(const m of MEALLIB[sl]){if(seen.has(m.n))continue;seen.add(m.n);if(mealUsable(m,K))out.push({m,sl});}
+  return out;
+}
+function recipeTime(m,K){if(m.gen){const s=genSteps(m,K);return s?s.time:0;}return /rychle|bez vareni|obchod/.test(m.tags)?5:/airfryer/.test(m.tags)?25:20;}
+function renderCook(){
+  if(!PROFILE){location.hash="#start";return;}
+  document.documentElement.style.setProperty("--accent","var(--plate-green)");
+  if(rSel)return renderRecipe();
+  const K=kitchen(),all=recipeList(),q=rQuery.toLowerCase().trim();
+  const fl={vse:()=>true,mraz:x=>x.m.frz,rychle:x=>recipeTime(x.m,K)<=20,airfryer:x=>/airfryer/.test(x.m.tags),bez:x=>/bez vareni|obchod/.test(x.m.tags)}[rFilter];
+  const list=all.filter(fl).filter(x=>!q||x.m.n.toLowerCase().includes(q));
+  document.getElementById("hTitle").textContent="Vaření";
+  document.getElementById("hSub").textContent=`${all.length} receptů pro tvoji kuchyň`;
+  const fz=freezer();
+  document.getElementById("view").innerHTML=`
+  ${fz.length?`<section class="card"><div class="row between"><b>V mrazáku</b><span class="hint">${fz.reduce((a,x)=>a+x.porce,0)} porcí</span></div><div class="hist">${fz.map(x=>`<div class="it"><span>${x.n}<br><span class="hint">${x.porce}× porce, zamraženo ${new Date(x.ts).toLocaleDateString("cs-CZ")}</span></span><button class="arrow wide" data-eat="${encodeURIComponent(x.n)}">Sníst porci</button></div>`).join("")}</div></section>`:""}
+  ${rMsg?`<div class="hint" style="color:var(--ok);text-align:center">${rMsg}</div>`:""}
+  <section class="card"><input type="search" id="rSearch" placeholder="Hledat recept: kuře, losos, kari…" value="${rQuery.replace(/"/g,"&quot;")}" aria-label="Hledat recept">
+    <div class="quick hscroll">${[["vse","Vše"],["mraz","Do mrazáku"],["rychle","Do 20 min"],["airfryer","Airfryer"],["bez","Bez vaření"]].map(([k,t])=>`<button class="qf" data-rf="${k}" aria-pressed="${rFilter===k}">${t}</button>`).join("")}</div>
+    <div class="hint">${list.length} receptů. Nádobí si nastavíš v <a href="#profil">Profilu</a>.</div>
+    <div class="hist" id="rList">${list.slice(0,rShow).map(x=>{const t=mealTotals(x.m);return `<button class="frow" data-recipe="${encodeURIComponent(x.m.n)}"><span>${x.m.n}<br><span class="hint">${Math.round(t.kcal)} kcal · ${Math.round(t.b)} g bílk. · ${money(t.cena)} · ${recipeTime(x.m,K)} min${x.m.frz?" · do mrazáku":""}</span></span><span class="chev">›</span></button>`;}).join("")||`<div class="empty">Nic nenalezeno. Zkus jiné slovo nebo filtr.</div>`}</div>
+    ${list.length>rShow?`<button class="btn ghost" id="rMore">Ukázat další</button>`:""}</section>`;
+  const s=document.getElementById("rSearch");s.oninput=()=>{rQuery=s.value;rShow=30;const p=s.selectionStart;renderCook();const n=document.getElementById("rSearch");n.focus();n.setSelectionRange(p,p);};
+  document.querySelectorAll("[data-rf]").forEach(b=>b.onclick=()=>{rFilter=b.dataset.rf;rShow=30;renderCook();});
+  document.querySelectorAll("[data-recipe]").forEach(b=>b.onclick=()=>{rSel=decodeURIComponent(b.dataset.recipe);rPortions=mealByName(rSel).frz?4:1;rMsg="";renderCook();scrollTo(0,0);});
+  const mo=document.getElementById("rMore");if(mo)mo.onclick=()=>{rShow+=30;renderCook();};
+  document.querySelectorAll("[data-eat]").forEach(b=>b.onclick=()=>{eatPortion(decodeURIComponent(b.dataset.eat));rMsg="Porce zapsaná do deníku.";renderCook();sync(false);});
+}
+function renderRecipe(){
+  const K=kitchen(),m=mealByName(rSel);if(!m){rSel=null;return renderCook();}
+  const steps=mealSteps(m,K)||[],t=mealTotals(m),n=rPortions,pl=place(),fridge=Math.min(n,3),frz=m.frz?Math.max(0,n-fridge):0;
+  document.getElementById("hTitle").textContent=m.n;
+  document.getElementById("hSub").innerHTML=`<button class="mini" id="rBack">‹ Zpět na recepty</button>`;
+  const shops=pl&&pl.date===todayISO()&&pl.shops.length?pl.shops.slice(0,3).map(s=>s.n).join(", "):"v každém supermarketu (Lidl, Penny, Albert, Kaufland…)";
+  document.getElementById("view").innerHTML=`<section class="card">
+    <div class="row">${m.gen?[...new Set(protHow(m.p,m.fl,K).eq.concat(m.c.how(K)&&/hrnec|Vař|vroucí/.test(m.c.how(K))?["hrnec"]:[]))].map(e=>`<span class="badge">${KIT[e]||e}</span>`).join(""):""}<span class="badge">${recipeTime(m,K)} min</span>${m.frz?`<span class="badge st">Jde zamrazit</span>`:""}</div>
+    <div class="grp"><span class="lbl">Kolik porcí uvaříš</span><div class="stepper"><button id="rMinus" aria-label="Méně porcí">−</button><input type="number" id="rN" value="${n}" aria-label="Počet porcí"><button id="rPlus" aria-label="Víc porcí">+</button></div></div>
+    <div class="grp"><span class="lbl">Jedna porce</span><div class="macros4"><div><b>${Math.round(t.kcal)}</b><span>kcal</span></div><div><b>${Math.round(t.b)}</b><span>bílkoviny</span></div><div><b>${Math.round(t.s)}</b><span>sacharidy</span></div><div><b>${money(t.cena)}</b><span>cena</span></div></div></div>
+    <div class="mbar"><div class="row between"><span>Nákup na ${n} ${n===1?"porci":n<5?"porce":"porcí"}</span><b>cca ${money(t.cena*n)}</b></div></div>
+    <div class="hint">Koupíš ${shops}.</div></section>
+  <section class="card"><b>Suroviny na ${n} ${n===1?"porci":n<5?"porce":"porcí"}</b><div class="hist">${m.items.map(([nm,g])=>{const f=FOODS.find(x=>x.n===nm);return `<div class="it"><span>${nm}</span><span class="hint">${itemQty({n:nm,g:g*n})}</span></div>`;}).join("")}</div></section>
+  <section class="card"><b>Postup</b><ol class="steps">${steps.map(s=>`<li>${s}</li>`).join("")}</ol>
+    ${n>1?`<div class="plan"><div>${m.frz?`Do lednice ${fridge} ${fridge===1?"porci":"porce"} (vydrží 3 dny), <b>${frz} ${frz===1?"porci":frz<5?"porce":"porcí"} zamraz</b> (vydrží 3 měsíce). Rozmrazuj přes noc v lednici a prohřej v mikrovlnce nebo na pánvi.`:`Tohle se moc nehodí do mrazáku. Uvař tolik, kolik sníš do 2–3 dnů, v lednici vydrží v krabičce.`}</div></div>`:""}</section>
+  ${rMsg?`<div class="hint" style="color:var(--ok);text-align:center">${rMsg}</div>`:""}
+  <button class="btn" id="rShop">Suroviny na nákupní seznam</button>
+  ${n>1&&m.frz?`<button class="btn ghost" id="rCooked">Uvařeno: ${frz} do mrazáku, 1 sním teď</button>`:`<button class="btn ghost" id="rEat">Uvařeno, zapsat porci do deníku</button>`}`;
+  document.getElementById("rBack").onclick=()=>{rSel=null;rMsg="";renderCook();scrollTo(0,0);};
+  const setN=v=>{rPortions=Math.max(1,Math.min(14,v));renderRecipe();};
+  document.getElementById("rMinus").onclick=()=>setN(n-1);document.getElementById("rPlus").onclick=()=>setN(n+1);document.getElementById("rN").onchange=e=>setN(+e.target.value||1);
+  document.getElementById("rShop").onclick=()=>{const L=shopList();for(const [nm,g] of m.items){const x=L.items.find(i=>i.n===nm&&!i.manual&&!i.checked);if(x)x.g+=g*n;else L.items.push({id:"s:"+nm+Date.now(),n:nm,g:g*n,checked:false});}LS.set("tr4_shop",L);rMsg="Suroviny jsou na nákupním seznamu.";renderRecipe();};
+  const rc=document.getElementById("rCooked");if(rc)rc.onclick=()=>{const it=freezer().map(x=>({...x})),x=it.find(y=>y.n===m.n);if(x)x.porce+=frz;else it.push({n:m.n,porce:frz,ts:Date.now()});setFreezer(it);
+    for(const [nm,g] of m.items){const f=FOODS.find(y=>y.n===nm);logFoodRaw(f,g,mealNow(),0,curSym(),null);}
+    Object.keys(localStorage).filter(k=>k.startsWith("tr4_plan_")&&k>"tr4_plan_"+todayISO()).forEach(k=>LS.del(k));rMsg=`Hotovo. ${frz} porcí v mrazáku, jedna zapsaná do deníku.`;renderRecipe();sync(false);};
+  const re=document.getElementById("rEat");if(re)re.onclick=()=>{for(const [nm,g] of m.items){const f=FOODS.find(y=>y.n===nm);logFoodRaw(f,g,mealNow(),0,curSym(),null);}rMsg="Porce zapsaná do deníku.";renderRecipe();sync(false);};
+}
 
 /* ---------- obchody v okolí (OpenStreetMap) ---------- */
 const place=()=>LS.get("tr4_place",null);
@@ -1779,26 +1926,30 @@ function renderPlan(){
     ${shopsLine()}</section>
   ${fMsg?`<div class="hint" style="color:var(--ok);text-align:center">${fMsg}</div>`:""}
   ${meals.map(({sl,i,m})=>{const t=mealTotals(m,p.k),items=scaledItems(m,p.k),n=MEALLIB[sl].length;
+    const el=eligible(sl,kitchen()),pos=el.indexOf(i)+1,stp=mealSteps(m,kitchen())||[m.how],inFz=freezer().some(x=>x.n===m.n);
     return `<section class="card ex" id="pl-${sl}"><div class="slotbar"><span class="lbl">${MEALS[sl]}${p.locked[sl]?" · tvoje volba":""}</span><div class="alts">
-      <button class="arrow" data-pswap="${sl}" data-dir="-1" aria-label="Předchozí varianta">‹</button><span class="hint">${i+1}/${n}</span><button class="arrow" data-pswap="${sl}" data-dir="1" aria-label="Další varianta">›</button></div></div>
+      <button class="arrow" data-pswap="${sl}" data-dir="-1" aria-label="Předchozí varianta">‹</button><span class="hint">${pos||1}/${el.length}</span><button class="arrow" data-pswap="${sl}" data-dir="1" aria-label="Další varianta">›</button></div></div>
       <div data-pswipe="${sl}" style="display:flex;flex-direction:column;gap:6px;touch-action:pan-y"><h3>${m.n}</h3>
         <div class="hint">${items.map(([n,g])=>`${n} ${g} ${FOODS.find(f=>f.n===n).ml?"ml":"g"}`).join(" · ")}</div></div>
       <div class="macros4"><div><b>${Math.round(t.kcal)}</b><span>kcal</span></div><div><b>${Math.round(t.b)}</b><span>bílkoviny</span></div><div><b>${Math.round(t.s)}</b><span>sacharidy</span></div><div><b>${money(t.cena)}</b><span>cena</span></div></div>
-      <details class="tip"><summary>Jak připravit</summary>${m.how}</details>
+      ${inFz?`<div class="hint" style="color:var(--ok)">Máš v mrazáku, stačí ohřát.</div>`:""}
+      <details class="tip"><summary>Jak připravit</summary><ol class="steps">${stp.map(x=>`<li>${x}</li>`).join("")}</ol>${m.gen||m.frz?`<a class="mini" href="#jidlo-vareni" data-cookopen="${encodeURIComponent(m.n)}">Uvařit víc porcí do zásoby ›</a>`:""}</details>
       ${logged[sl]?`<div class="hint" style="color:var(--ok)">✓ Zapsáno do deníku</div>`:`<button class="btn ghost" data-plog="${sl}">Snědeno, zapsat do deníku</button>`}
     </section>`;}).join("")}
   <a class="btn" href="#jidlo-nakup">Nakoupit na tenhle plán</a>`;
   document.querySelectorAll("[data-pswap]").forEach(b=>b.onclick=()=>swapPlan(b.dataset.pswap,+b.dataset.dir));
+  document.querySelectorAll("[data-cookopen]").forEach(a=>a.onclick=()=>{rSel=decodeURIComponent(a.dataset.cookopen);rPortions=4;rMsg="";});
   document.querySelectorAll("[data-pswipe]").forEach(el=>{let x0=null,y0=0;
     el.addEventListener("touchstart",e=>{x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});
     el.addEventListener("touchend",e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5)swapPlan(el.dataset.pswipe,dx<0?1:-1);});});
   document.querySelectorAll("[data-plog]").forEach(b=>b.onclick=()=>{const sl=b.dataset.plog,i=PLAN_SLOTS.indexOf(sl),m=MEALLIB[sl][p.pick[i]];
     for(const [n,g] of scaledItems(m,p.k)){const f=FOODS.find(x=>x.n===n);logFoodRaw(f,g,sl,0,curSym(),null);/* odhad ceny z plánu nepočítáme do výdajů */}
+    {const it=freezer().map(x=>({...x})),x=it.find(y=>y.n===m.n);if(x){x.porce--;setFreezer(it.filter(y=>y.porce>0));}}
     p.logged=Object.assign({},p.logged||{},{[sl]:true});LS.set("tr4_plan_"+d,p);fMsg=`${MEALS[sl]} zapsaná do deníku.`;renderPlan();sync(false);});
   bindShops(renderPlan);fMsg="";
 }
 function swapPlan(sl,dir){
-  const d=curDay(),p=planFor(d),i=PLAN_SLOTS.indexOf(sl),n=MEALLIB[sl].length,nx=(p.pick[i]+dir+n)%n;
+  const d=curDay(),p=planFor(d),i=PLAN_SLOTS.indexOf(sl),el=eligible(sl,kitchen()),pos=Math.max(0,el.indexOf(p.pick[i])),nx=el[(pos+dir+el.length)%el.length];
   replanDay(d,sl,nx);const y=scrollY;renderPlan();scrollTo(0,y);
   const c=document.getElementById("pl-"+sl);if(c){c.classList.add(dir>0?"slide-l":"slide-r");setTimeout(()=>c.classList.remove("slide-l","slide-r"),260);}
 }
@@ -2077,11 +2228,11 @@ function render(){
   document.querySelectorAll("nav a").forEach(a=>a.setAttribute("aria-current",(a.dataset.v===tabOf(v))?"page":"false"));
   document.getElementById("chips").hidden=v!=="trenink";
   renderWeighNote();
-  const sub=document.getElementById("subnav"),grp=["trenink","statistiky","program"].includes(v)?[["trenink","Dnešní trénink"],["statistiky","Statistiky"],["program","Program"]]:["jidlo","jidlo-plan","jidlo-nakup"].includes(v)?[["jidlo","Deník"],["jidlo-plan","Jídelníček"],["jidlo-nakup","Nákup"]]:null;
+  const sub=document.getElementById("subnav"),grp=["trenink","statistiky","program"].includes(v)?[["trenink","Dnešní trénink"],["statistiky","Statistiky"],["program","Program"]]:["jidlo","jidlo-plan","jidlo-vareni","jidlo-nakup"].includes(v)?[["jidlo","Deník"],["jidlo-plan","Plán"],["jidlo-vareni","Vaření"],["jidlo-nakup","Nákup"]]:null;
   sub.hidden=!grp||(v==="jidlo"&&fAdd);
   sub.innerHTML=(grp||[]).map(([k,t])=>`<a href="#${k}" aria-current="${k===v?"page":"false"}">${t}</a>`).join("");
   if(v==="start")renderStart();else if(v==="statistiky")renderStats();else if(v==="program")renderProgram();else if(v==="profil")renderProfile();
-  else if(v==="trenink")renderToday();else if(v==="jidlo")renderFood();else if(v==="jidlo-plan")renderPlan();else if(v==="jidlo-nakup")renderShop();else if(v==="penize")renderMoney();else renderHome();
+  else if(v==="trenink")renderToday();else if(v==="jidlo")renderFood();else if(v==="jidlo-plan")renderPlan();else if(v==="jidlo-nakup")renderShop();else if(v==="jidlo-vareni")renderCook();else if(v==="penize")renderMoney();else renderHome();
   renderStatus();animate();tickClock();
 }
 let weighOpen=false;
