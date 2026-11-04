@@ -260,6 +260,7 @@ details>summary.mini{list-style:none;cursor:pointer}
 .ck{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-weight:700;color:var(--on-accent)}
 .ck.on{background:var(--ok);border-color:var(--ok)}
 .card.slide-l{animation:slideL .22s ease-out}.card.slide-r{animation:slideR .22s ease-out}
+.editbox input,.editbox select{background:var(--surface)}
 </style>
 </head>
 <body>
@@ -1573,14 +1574,31 @@ async function lookupCode(code){
 let tessLoading=null;
 function loadTess(){if(window.Tesseract)return Promise.resolve();if(tessLoading)return tessLoading;
   tessLoading=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";s.onload=res;s.onerror=()=>{tessLoading=null;rej();};document.head.appendChild(s);});return tessLoading;}
+// Čte tabulku výživových hodnot. Nejdřív podle názvů řádků (CZ/DE/EN/PL/FR), když chybí, podle pevného pořadí EU tabulky:
+// energie, tuky, z toho nasycené, sacharidy, z toho cukry, (vláknina), bílkoviny, sůl. Vybere pořadí, které nejlíp sedí na kalorie.
 function parseLabel(txt){
-  const t=txt.toLowerCase().replace(/,/g,".").replace(/[ \t]+/g," ");
-  const after=re=>{const m=t.match(re);return m?parseFloat(m[1]):null;};
-  const kcal=after(/(\d{1,4}(?:\.\d)?)\s*kcal/);
-  const b=after(/(?:bílkoviny|bilkoviny|eiwei(?:ß|ss)|protein[a-z]*|białko)[^\d\n]{0,25}(\d{1,3}(?:\.\d{1,2})?)/);
-  const s=after(/(?:sacharidy|kohlenhydrate|carbohydrate[s]?|węglowodany)[^\d\n]{0,25}(\d{1,3}(?:\.\d{1,2})?)/);
-  const tk=after(/(?:^|\n)\s*(?:tuky|tuk|fett|fat|tłuszcz)[^\d\n]{0,25}(\d{1,3}(?:\.\d{1,2})?)/);
-  return {kcal,b,s,t:tk};
+  const t=txt.toLowerCase().replace(/(\d),(\d)/g,"$1.$2").replace(/[ \t]+/g," ");
+  const num="(\\d{1,3}(?:\\.\\d{1,2})?)";
+  const kw=(words)=>{const m=t.match(new RegExp("(?:"+words+")[^\\d\\n]{0,30}"+num));return m?parseFloat(m[1]):null;};
+  let kcal=null;const km=t.match(/(\d{2,4}(?:\.\d)?)\s*kcal/);if(km)kcal=parseFloat(km[1]);
+  const r={kcal,b:kw("bílkoviny|bilkoviny|eiwei(?:ß|ss)|protein[a-z]*|białko|protéines"),s:kw("sacharidy|kohlenhydrate|carbohydrate[s]?|węglowodany|glucides"),
+    t:kw("(?:^|\\n)\\s*(?:tuky|tuk|fett|fat|tłuszcz|matières grasses|lipides)"),sugar:kw("cukry|zucker|sugars|cukry|sucres"),sat:kw("nasycené|gesättigte|saturates|nasycone|saturés"),
+    fiber:kw("vláknina|ballaststoffe|fibre|fiber|błonnik|fibres"),salt:kw("sůl|salz|salt|sól|sel\\b")};
+  const have=["b","s","t"].filter(k=>r[k]!=null).length;
+  if(have>=3||kcal==null)return r;
+  // podle pořadí: první číslo s "g" na každém řádku za prvním řádkem s kcal; zkusí všechny kcal a posuny
+  const lines=t.split("\n"),ki=lines.findIndex(l=>/kcal/.test(l)),vals=[];
+  for(const l of lines.slice(ki)){const m=l.replace(/\d{2,4}(?:\.\d)?\s*kcal/g,"").match(/(\d{1,3}(?:\.\d{1,2})?)\s*g\b/);if(m)vals.push(parseFloat(m[1]));if(vals.length>=11)break;}
+  const kcals=[...t.matchAll(/(\d{2,4}(?:\.\d)?)\s*kcal/g)].map(m=>parseFloat(m[1]));
+  const maps=[["t","sat","s","sugar","fiber","b","salt"],["t","sat","s","sugar","b","salt"],["t","sat","s","sugar","fiber","b"],["t","s","sugar","b","salt"]];
+  let best=null;
+  for(const kc of kcals)for(let off=0;off<=3;off++)for(const mp of maps){
+    if(vals.length<off+mp.length)continue;const o={};mp.forEach((k,i)=>o[k]=vals[off+i]);
+    if(o.sat!=null&&o.sat>o.t+.01)continue;if(o.sugar!=null&&o.sugar>o.s+.01)continue;if(o.salt!=null&&o.salt>6)continue;if(o.t+o.s+o.b+(o.fiber||0)>101)continue;
+    const e=4*o.b+4*o.s+9*o.t+2*(o.fiber||0),err=Math.abs(e-kc)/kc-mp.length*.002;
+    if(!best||err<best.err)best={o,err,kc};}
+  if(best&&best.err<.08){Object.assign(r,best.o);r.kcal=best.kc;}
+  return r;
 }
 async function readLabel(file){
   const out=document.getElementById("ocrOut");out.innerHTML=`<div class="hint">Čtu obal… může to trvat 10–30 s.</div>`;
@@ -1829,6 +1847,14 @@ function renderShop(){
   const sc=document.getElementById("shopClear");if(sc)sc.onclick=()=>{const L=shopList();L.items=L.items.filter(x=>!x.checked);LS.set("tr4_shop",L);renderShop();};
   document.getElementById("vGo").onclick=()=>judgeCode(document.getElementById("vCode").value.trim());
   document.getElementById("vScan").onclick=()=>startScanFor(judgeCode);
+  const vs=document.getElementById("vvSave");if(vs)vs.onclick=()=>{const v=scanVerdict;["kcal","b","s","sugar","t","sat","fiber","salt"].forEach(k=>{const x=num("vv-"+k);if(x!==undefined&&x!=="")v[k]=+x;});
+    if(v.kcal>0){v.missing=false;if(v.src!=="foto")v.src="ruka";}vEditOpen=false;renderShop();};
+  const vo=document.getElementById("vOcr");if(vo)vo.onchange=async()=>{const file=vo.files[0];if(!file)return;const out=document.getElementById("vOcrOut");out.innerHTML=`<div class="hint">Čtu tabulku… 10–30 s.</div>`;
+    try{await loadTess();}catch(e){out.innerHTML=`<div class="hint" style="color:var(--warn)">Čtečku se nepodařilo stáhnout, poprvé to chce internet.</div>`;return;}
+    try{const r=await Tesseract.recognize(file,"ces+deu+eng+pol+fra");const p=parseLabel(r.data.text),v=scanVerdict;let n=0;for(const k of ["kcal","b","s","sugar","t","sat","fiber","salt"])if(p[k]!=null){v[k]=p[k];n++;}
+      if(v.kcal>0&&n>=4){v.missing=false;v.src="foto";renderShop();}else{out.innerHTML=`<div class="hint" style="color:var(--warn)">Přečetl jsem jen část. Doplň zbytek ručně a klepni Posoudit.</div>`;
+        ["kcal","b","s","sugar","t","sat","fiber","salt"].forEach(k=>{const el=document.getElementById("vv-"+k);if(el&&v[k]!=null)el.value=v[k];});}}
+    catch(e){out.innerHTML=`<div class="hint" style="color:var(--warn)">Fotku se nepodařilo přečíst. Vyfoť ji rovně a ostře.</div>`;}};
   document.querySelectorAll("[data-vadd]").forEach(b=>b.onclick=()=>{const L=shopList();L.items.push({id:"m"+Date.now(),n:scanVerdict.n,manual:true,checked:false});LS.set("tr4_shop",L);scanVerdict.added=true;renderShop();});
   document.querySelectorAll("[data-vsave]").forEach(b=>b.onclick=()=>{const v=scanVerdict,now=Date.now();addRecord({v:4,typ:"potravina",id:"c:"+v.code,ts:now,n:v.n,kcal:v.kcal,b:v.b,t:v.t,s:v.s,u:["porce",v.ug||100],ml:false,mc:"jidlo",price:0,code:v.code});v.saved=true;renderShop();sync(false);});
   bindShops(renderShop);
@@ -1846,18 +1872,31 @@ async function judgeCode(code){
   const out=document.getElementById("verdict");out.innerHTML=`<div class="hint">Hledám ${code}…</div>`;
   const local=allFoods().find(f=>f.code===code);let v=null;
   if(navigator.onLine){try{const j=await (await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_cs,brands,nutriments,nutriscore_grade,nova_group,serving_quantity,categories_tags`)).json();
-    if(j.status===1&&j.product){const p=j.product,n=p.nutriments||{};v={code,n:[p.product_name_cs||p.product_name,p.brands&&p.brands.split(",")[0]].filter(Boolean).join(" · ")||"Výrobek "+code,
+    if(j.status===1&&j.product){const p=j.product,n=p.nutriments||{},sq=+p.serving_quantity||0;
+      const g=k=>n[k+"_100g"]!=null?+n[k+"_100g"]:(sq&&n[k+"_serving"]!=null?+n[k+"_serving"]*100/sq:null);
+      if(n["energy-kcal_100g"]==null&&n.energy_100g==null&&sq&&n["energy-kcal_serving"]!=null)n["energy-kcal_100g"]=+n["energy-kcal_serving"]*100/sq;
+      ["proteins","carbohydrates","fat","sugars","saturated-fat","salt","fiber"].forEach(k=>{if(n[k+"_100g"]==null&&g(k)!=null)n[k+"_100g"]=g(k);});
+      v={code,n:[p.product_name_cs||p.product_name,p.brands&&p.brands.split(",")[0]].filter(Boolean).join(" · ")||"Výrobek "+code,
       kcal:+(n["energy-kcal_100g"]??(n.energy_100g?n.energy_100g/4.184:0)),b:+(n.proteins_100g||0),s:+(n.carbohydrates_100g||0),t:+(n.fat_100g||0),sugar:n.sugars_100g,sat:n["saturated-fat_100g"],salt:n.salt_100g,fiber:n.fiber_100g,ns:p.nutriscore_grade,nova:p.nova_group,ug:+p.serving_quantity||0,cats:(p.categories_tags||[]).join(" ")};}}catch(e){}}
   if(!v&&local)v={code,n:local.n,kcal:local.kcal,b:local.b,s:local.s,t:local.t};
+  if(v&&!(v.kcal>0))v.missing=true;
   if(!v){out.innerHTML=`<div class="hint" style="color:var(--warn)">${navigator.onLine?"Výrobek v databázi není.":"Bez internetu ho neposoudím."} Podívej se na obal: dobrá volba má hodně bílkovin a málo cukru.</div>`;return;}
   scanVerdict=v;out.innerHTML=verdictHTML(v);renderShop();
 }
+let vEditOpen=false;
+function verdictEditHTML(v){
+  const f=(id,l,x)=>field(id,l,x==null||(v.missing&&!x)?"":Math.round(x*10)/10);
+  return `<div class="grid2">${f("vv-kcal","kcal ve 100 g",v.kcal||null)}${f("vv-b","Bílkoviny",v.b)}${f("vv-s","Sacharidy",v.s)}${f("vv-sugar","z toho cukry",v.sugar)}${f("vv-t","Tuky",v.t)}${f("vv-sat","z toho nasycené",v.sat)}${f("vv-fiber","Vláknina",v.fiber)}${f("vv-salt","Sůl",v.salt)}</div>
+    <div class="row"><button class="btn" id="vvSave" style="flex:1;width:auto">Posoudit s těmito hodnotami</button></div>`;
+}
 function verdictHTML(v){
+  if(v.missing)return `<div class="editbox"><b>${v.n}</b><div class="hint" style="color:var(--warn)">U tohohle výrobku v databázi chybí výživové hodnoty, takže ho zatím neposoudím. Vyfoť tabulku na obalu, nebo hodnoty opiš.</div>
+    <label class="btn">Vyfotit tabulku<input type="file" id="vOcr" accept="image/*" capture="environment" hidden></label><div id="vOcrOut"></div>${verdictEditHTML(v)}</div>`;
   let sc=0;const why=[],goal=(PROFILE&&PROFILE.cil)||"nabrat",pd=v.kcal>0?v.b/(v.kcal/100):0;
   if(pd>=10){sc+=3;why.push(["+",`hodně bílkovin: ${fmt(Math.round(v.b*10)/10)} g ve 100 g`]);}
   else if(pd>=6){sc+=2;why.push(["+",`slušně bílkovin: ${fmt(Math.round(v.b*10)/10)} g ve 100 g`]);}
   else if(v.s>=50&&(v.sugar??0)<10&&(v.fiber??0)>=5){sc+=1;why.push(["+","dobrý zdroj sacharidů s vlákninou"]);}
-  else if(pd<3){sc-=1;why.push(["−","skoro žádné bílkoviny"]);}
+  else if(pd<3){sc-=1;why.push(["−",v.b>=1?`málo bílkovin na kalorie: ${fmt(Math.round(v.b*10)/10)} g ve 100 g`:"skoro žádné bílkoviny"]);}
   if(v.sugar!=null){if(v.sugar>=22.5){sc-=2;why.push(["−",`hodně cukru: ${fmt(Math.round(v.sugar))} g ve 100 g`]);}else if(v.sugar>=12){sc-=1;why.push(["−",`dost cukru: ${fmt(Math.round(v.sugar))} g ve 100 g`]);}}
   if(v.sat!=null){if(v.sat>=10){sc-=2;why.push(["−","hodně nasycených tuků"]);}else if(v.sat>=5){sc-=1;why.push(["−","dost nasycených tuků"]);}}
   if(v.salt!=null&&v.salt>=1.5){sc-=1;why.push(["−","hodně soli"]);}
@@ -1869,6 +1908,8 @@ function verdictHTML(v){
   return `<div class="editbox" style="box-shadow:inset 0 0 0 2px ${c}"><b style="font:700 24px var(--display);color:${c}">${t}</b><div><b>${v.n}</b></div>
     <div class="macros4"><div><b>${Math.round(v.kcal)}</b><span>kcal</span></div><div><b>${fmt(Math.round(v.b*10)/10)}</b><span>bílkoviny</span></div><div><b>${fmt(Math.round(v.s))}</b><span>sacharidy</span></div><div><b>${fmt(Math.round(v.t))}</b><span>tuky</span></div></div>
     <div class="hint">ve 100 g</div>${why.map(([s,x])=>`<div style="color:${s==="+"?"var(--ok)":"var(--warn)"}">${s} ${x}</div>`).join("")}
+    ${v.src==="foto"?`<div class="hint">Hodnoty jsem přečetl z fotky. Když nesedí, oprav je.</div>`:""}
+    <details ${vEditOpen?"open":""}><summary class="mini">Opravit hodnoty</summary>${verdictEditHTML(v)}</details>
     <div class="row">${v.added?`<span class="hint">Na seznamu ✓</span>`:`<button class="arrow wide" data-vadd>Na seznam</button>`}${v.saved?`<span class="hint">Uloženo ✓</span>`:`<button class="arrow wide" data-vsave>Uložit potravinu</button>`}</div></div>`;
 }
 
