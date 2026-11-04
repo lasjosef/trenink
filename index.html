@@ -682,7 +682,10 @@ async function g(url,opt={}){
   const r=await fetch(url,{...opt,headers:{...(opt.headers||{}),Authorization:"Bearer "+t}});
   if(r.status===401){LS.set("tr4_token",null);throw {auth:true};}
   if(r.status===404)throw {notfound:true};
-  if(!r.ok)throw new Error("Google Disk odpověděl chybou "+r.status);
+  if(!r.ok){let reason="";try{const j=await r.json();reason=(j.error&&j.error.errors&&j.error.errors[0]&&j.error.errors[0].reason)||(j.error&&j.error.status)||"";}catch(e){}
+    if(r.status===403&&/accessNotConfigured|SERVICE_DISABLED/i.test(reason))throw new Error("V Google Cloud není zapnuté Google Drive API. Zapni ho (APIs & Services → Library → Google Drive API → Enable) a zkus to za pár minut znovu");
+    if(r.status===403&&/insufficient|PERMISSION_DENIED|forbidden/i.test(reason)){LS.set("tr4_token",null);LS.set("tr4_linked",false);throw new Error("Google nepovolil přístup k Disku. Při přihlášení zaškrtni povolení pro soubory na Disku");}
+    throw new Error("Google Disk odpověděl chybou "+r.status+(reason?" ("+reason+")":""));}
   return r;
 }
 async function folderId(){
