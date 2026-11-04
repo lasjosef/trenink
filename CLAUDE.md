@@ -11,6 +11,6 @@ Běží na GitHub Pages: https://lasjosef.github.io/trenink (Android, Chrome, �
 - Pop-upy/modaly ne, preferuj inline panely.
 
 ## Stav (listopad 2026)
-- Hotovo: posilovna Horní/Spodní 4× týdně (rotace H1→S1→H2→S2), kalibrace síly z sérií (3+ / 1–2 / Hranice = RIR 3 / 1,5 / 0,5), adaptivní tempo růstu, diagnóza poklesu, check-in jen do rozboru, lehčí den −5 %, odškrtávání sérií, čas od „Jdu na to“, přenos vynechaných cviků podle partií, rozcvička u těžkých cviků, zápis starších tréninků, kalendář, tělesná váha, synchronizace na Disk.
-- Plán: horní/spodní den na 60 min, ≥3 náhrady cviku (swipe), program s vlastní vahou (doma / na cestách), rotace posilovna ↔ vlastní váha podle kalendáře, úvodní nastavení s volbou úložiště, šifrování dat heslem před nahráním na Disk, jídlo (oblíbené, čárový kód přes Open Food Facts, foto tabulky obalu s OCR v telefonu, kreatin/protein), peníze (výdaje, kategorie, banka).
-- Kotouče v nastavení (výchozí 25/20/15/10/5/2,5 kg).
+- Hotovo: úvodní průvodce (úložiště telefon/Google Disk, šifrování heslem AES-GCM, údaje, vybavení, kotouče, maxima, střídání míst), profil, posilovna 4 dny po ~55–60 min, vlastní váha 2 kruhové tréninky + kardio + kliky po troškách, režim podle kalendáře, odlehčení po návratu do posilovny, sloty se 3 náhradami (swipe/šipky), kalibrace z maxim a ze sérií, adaptivní tempo, diagnóza poklesu, přenos vynechaných partií, rozcvička, zápis starších tréninků, kalendář, váha, záloha do souboru.
+- Kód: vše v `index.html` (katalog `X(...)`, programy `PROGRAM` se sloty `S(...)`, figury `PAT`, výpočty, sync, obrazovky).
+- Další: jídlo (oblíbené, čárový kód přes Open Food Facts, foto tabulky obalu s OCR v telefonu, kreatin/protein, cíle kcal), peníze (výdaje, kategorie, banka), jeden přehled „Dnes“.
