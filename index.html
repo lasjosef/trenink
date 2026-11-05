@@ -275,6 +275,7 @@ details>summary.mini{list-style:none;cursor:pointer}
 .qrow img,.qini,.qasel img{flex:none;width:46px;height:46px;border-radius:12px;object-fit:cover;background:#fff}
 .qini{display:grid;place-items:center;font:700 19px var(--display);color:var(--accent);font-style:normal;background:var(--raise)}
 .qasel{display:flex;gap:12px;align-items:center}.qasel img,.qasel .qini{width:64px;height:64px;border-radius:14px}
+.erow{display:flex;gap:10px;align-items:center;min-width:0}.ethumb{width:42px;height:42px;border-radius:10px;object-fit:cover;flex:none}.ethumb.big{width:100%;height:auto;max-height:260px;border-radius:14px}
 ol.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px;font-size:15px}
 ol.steps li::marker{font-weight:700;color:var(--accent)}
 .subnav a{font-size:13px}
@@ -1233,6 +1234,7 @@ function renderProfile(){
         <div class="fld"><span>Počítat jako jídlo</span><select id="sp-f-${i}"><option value="">Ne</option>${allFoods().map(f=>`<option value="${f.id}" ${f.id===d.fid?"selected":""}>${f.n}</option>`).join("")}</select></div></div>
         <button class="mini" data-sprm="${i}" style="color:var(--warn);align-self:flex-start">Odebrat</button></div>`).join("")}
       <button class="btn ghost" id="spAdd">+ Přidat doplněk</button></section>
+    ${aiProfileHTML()}
     <section class="card"><h2>Peníze</h2><div class="grid2">${field("f-jden","Na jídlo za den (Kč, nepovinné)",p.jidloDen||"")}${field("f-jtyd","Na jídlo za týden (Kč, nepovinné)",p.jidloTyden||"")}${field("f-rozp","Měsíční rozpočet celkem (Kč)",p.rozpocet)}${field("f-kurz","Kurz 1 € v Kč",p.kurz)}</div></section>
     <section class="card"><h2>Jméno</h2>${stepHTML(p,0,true)}</section>
     <div id="pErr" class="hint" style="color:var(--warn)"></div>
@@ -1248,6 +1250,7 @@ function renderProfile(){
   document.querySelectorAll("[data-sprm]").forEach(b=>b.onclick=()=>{readSupps();p.doplnky.splice(+b.dataset.sprm,1);re();});
   bindChoices(p,re);
   const ps=document.getElementById("pSync");if(ps)ps.onclick=()=>sync(true);
+  bindAiProfile();
   document.getElementById("pSave").onclick=async()=>{
     [0,1,2,3,4].forEach(i=>readStep(p,i));readSupps();
     for(const i of [0,1,2,3]){const e=await validateStep(p,i);if(e){document.getElementById("pErr").textContent=e;return;}}
@@ -1409,7 +1412,7 @@ function plateRing(v,max,sub,color="var(--accent)"){
     <circle cx="66" cy="66" r="36" fill="none" stroke="var(--line)" stroke-width="1"/></svg>
     <div class="in"><b>${Math.round(v)}</b><span>${sub}</span></div></div>`;
 }
-function quickFoods(){const seen=new Map();for(const e of records().filter(r=>r.typ==="jidlo"&&!r.supp).reverse()){if(!seen.has(e.fid))seen.set(e.fid,e);if(seen.size>=8)break;}return [...seen.values()];}
+function quickFoods(){const seen=new Map();for(const e of records().filter(r=>r.typ==="jidlo"&&!r.supp&&!r.pending).reverse()){const k=e.fid==="foto"?"foto:"+e.name:e.fid;if(!seen.has(k))seen.set(k,e);if(seen.size>=8)break;}return [...seen.values()];}
 function waterHTML(d){
   const r=dayRec(d),T=targets(),n=Math.round(T.voda/250),have=Math.round(r.voda/250);
   return `<div class="row between"><b>Voda</b><span class="hint">${fmt(r.voda/1000)} z ${fmt(T.voda/1000)} l</span></div>
@@ -1438,11 +1441,17 @@ function logFoodRaw(f,g,meal,price,cur,supp){
 }
 const logFood=(f,g,meal,price,cur)=>logFoodRaw(f,g,meal,price,cur,null);
 function entryRow(e){
+  if(fEdit===e.id&&e.fid==="foto")return `<div class="editbox">${e.thumb?`<img class="ethumb big" src="${e.thumb}" alt="">`:""}${e.ai&&e.ai.pozn?`<div class="hint">AI: ${e.ai.pozn}</div>`:""}
+    <div class="grid2">${field("ed-n","Název",e.name,"text")}${field("ed-g","Hmotnost (g)",e.g||"")}${field("ed-kcal","Kalorie",e.kcal?Math.round(e.kcal):"")}${field("ed-b","Bílkoviny (g)",e.b?Math.round(e.b):"")}${field("ed-s","Sacharidy (g)",e.s?Math.round(e.s):"")}${field("ed-t","Tuky (g)",e.tk?Math.round(e.tk):"")}${field("ed-price","Cena",e.price||"")}
+    <div class="fld"><span>Jídlo</span><select id="ed-meal">${Object.entries(MEALS).map(([k,t])=>`<option value="${k}" ${k===e.meal?"selected":""}>${t}</option>`).join("")}</select></div></div>
+    <div class="hint">Když změníš jen hmotnost, ostatní hodnoty se přepočítají.</div>
+    <div class="row"><button class="btn" id="edSave" style="flex:1;width:auto">Uložit</button>${aiReady()?`<button class="btn ghost" id="edAi" style="width:auto">AI znovu</button>`:""}<button class="btn ghost" id="edDel" style="width:auto">Smazat</button><button class="btn ghost" id="edCancel" style="width:auto">Zpět</button></div></div>`;
   if(fEdit===e.id)return `<div class="editbox"><b>${e.name}</b><div class="grid2">${field("ed-g",e.ml?"Množství (ml)":"Množství (g)",e.g)}${field("ed-price","Cena",e.price||"")}
     <div class="fld"><span>Jídlo</span><select id="ed-meal">${Object.entries(MEALS).map(([k,t])=>`<option value="${k}" ${k===e.meal?"selected":""}>${t}</option>`).join("")}</select></div>
     <div class="fld"><span>Kategorie výdaje</span><select id="ed-mc">${Object.entries(MCATS).map(([k,t])=>`<option value="${k}" ${k===(e.mc||"jidlo")?"selected":""}>${t}</option>`).join("")}</select></div></div>
     <div class="row"><button class="btn" id="edSave" style="flex:1;width:auto">Uložit</button><button class="btn ghost" id="edDel" style="width:auto">Smazat</button><button class="btn ghost" id="edCancel" style="width:auto">Zpět</button></div></div>`;
-  return `<div class="it tap" data-edit="${e.id}"><span>${e.name}<br><span class="hint">${fmt(e.g)} ${e.ml?"ml":"g"}${e.price?" · "+fmt(e.price)+" "+(e.cur||"Kč"):""}</span></span><span style="text-align:right;white-space:nowrap"><b>${Math.round(e.kcal)}</b> kcal<br><span class="hint">${Math.round(e.b)} g bílk.</span></span></div>`;
+  const sub=e.pending?`<span style="color:var(--plate-yellow)">čeká na odhad AI</span>${e.aiErr?" · "+e.aiErr:""}`:`${e.g?fmt(e.g)+" "+(e.ml?"ml":"g"):""}${e.ai?" · odhad AI":""}${e.price?" · "+fmt(e.price)+" "+(e.cur||"Kč"):""}`;
+  return `<div class="it tap" data-edit="${e.id}"><span class="erow">${e.thumb?`<img class="ethumb" src="${e.thumb}" alt="">`:""}<span>${e.name}<br><span class="hint">${sub}</span></span></span><span style="text-align:right;white-space:nowrap"><b>${Math.round(e.kcal)}</b> kcal<br><span class="hint">${Math.round(e.b)} g bílk.</span></span></div>`;
 }
 function renderFood(){
   if(!PROFILE){location.hash="#start";return;}
@@ -1476,7 +1485,7 @@ function renderAdd(){
   document.getElementById("hTitle").textContent=fSel?fSel.n:"Přidat jídlo";
   document.getElementById("hSub").innerHTML=`<button class="mini" id="fBackTop">‹ Zpět na ${curDay()===todayISO()?"dnešek":"den"}</button>`;
   document.getElementById("view").innerHTML=`<section class="card">
-    ${fSel?"":`<div class="tabs">${[["hledat","Hledat",ICON.search],["kod","Čárový kód",ICON.code],["foto","Foto obalu",ICON.photo],["nova","Vlastní",ICON.pen]].map(([k,t,ic])=>`<button data-tab="${k}" aria-pressed="${fTab===k}">${ic}${t}</button>`).join("")}</div>`}
+    ${fSel?"":`<div class="tabs">${[["hledat","Hledat",ICON.search],["kod","Čárový kód",ICON.code],["foto","Foto",ICON.photo],["nova","Vlastní",ICON.pen]].map(([k,t,ic])=>`<button data-tab="${k}" aria-pressed="${fTab===k}">${ic}${t}</button>`).join("")}</div>`}
     <div id="fPanel">${panelHTML(meal)}</div></section>`;
   bindAdd();
 }
@@ -1490,7 +1499,8 @@ function panelHTML(meal){
   if(fTab==="kod")return `<div class="hint">Namiř kameru na čárový kód. Hodnoty dohledám v Open Food Facts (chce internet). Co jednou naskenuješ, příště najdeš i offline.</div>
     <div id="scanBox"></div><button class="btn" id="scanBtn">Zapnout kameru</button>
     <div class="bwrow"><input type="text" inputmode="numeric" id="codeIn" placeholder="nebo číslo pod kódem" aria-label="Číslo čárového kódu" style="flex:1;max-width:none"><button class="arrow wide" id="codeGo">Hledat</button></div>`;
-  if(fTab==="foto")return `<div class="hint">Vyfoť tabulku výživových hodnot. Text se čte přímo v telefonu. Poprvé se stáhne čtečka (asi 10 MB, chce internet), pak to jde i offline. Hodnoty před uložením zkontroluj.</div>
+  if(fTab==="foto")return `<span class="lbl">Jídlo na talíři</span><label class="btn">Vyfotit jídlo${aiReady()?", AI odhadne kalorie":""}<input type="file" id="mealIn" accept="image/*" capture="environment" hidden></label><div id="mealOut"></div>
+    <span class="lbl" style="margin-top:10px">Tabulka na obalu</span><div class="hint">Vyfoť tabulku výživových hodnot. Text se čte přímo v telefonu. Poprvé se stáhne čtečka (asi 10 MB, chce internet), pak to jde i offline. Hodnoty před uložením zkontroluj.</div>
     <label class="btn">Vyfotit obal<input type="file" id="ocrIn" accept="image/*" capture="environment" hidden></label><div id="ocrOut"></div>`;
   return newFoodForm({});
 }
@@ -1519,7 +1529,12 @@ function bindFood(){
   document.querySelectorAll("[data-addmeal]").forEach(b=>b.onclick=()=>openAdd(b.dataset.addmeal));
   document.getElementById("fab").onclick=()=>openAdd(null);
   document.querySelectorAll("[data-edit]").forEach(el=>el.onclick=()=>{fEdit=el.dataset.edit;renderFood();});
-  const es=document.getElementById("edSave");if(es)es.onclick=()=>{const e=DB[fEdit],g=num("ed-g");if(!(g>0))return;const k=g/e.g;
+  const ea=document.getElementById("edAi");if(ea)ea.onclick=async()=>{const e=DB[fEdit];addRecord({...e,pending:1,aiErr:"",hint:document.getElementById("ed-n").value.trim()||e.hint});fEdit=null;fMsg=navigator.onLine?"AI odhaduje…":"AI to odhadne, až budeš online.";renderFood();await aiProcessPending();};
+  const es=document.getElementById("edSave");if(es&&DB[fEdit]&&DB[fEdit].fid==="foto")es.onclick=()=>{const e=DB[fEdit],v=id=>+num(id)||0;let kcal=v("ed-kcal"),b=v("ed-b"),s_=v("ed-s"),t=v("ed-t"),g=v("ed-g");
+    if(e.g&&g&&g!==e.g&&Math.round(e.kcal)===kcal){const k=g/e.g;kcal=e.kcal*k;b=e.b*k;s_=e.s*k;t=e.tk*k;}
+    addRecord({...e,ts:Date.now(),name:document.getElementById("ed-n").value.trim()||e.name,g,kcal,b,s:s_,tk:t,price:v("ed-price"),meal:document.getElementById("ed-meal").value,pending:kcal>0?0:e.pending,aiErr:kcal>0?"":e.aiErr});
+    fEdit=null;fMsg="Změněno.";renderFood();sync(false);};
+  else if(es)es.onclick=()=>{const e=DB[fEdit],g=num("ed-g");if(!(g>0))return;const k=g/e.g;
     addRecord(Object.assign({},e,{g,kcal:e.kcal*k,b:e.b*k,tk:e.tk*k,s:e.s*k,caf:(e.caf||0)*k,price:+num("ed-price")||0,meal:document.getElementById("ed-meal").value,mc:document.getElementById("ed-mc").value}));
     fEdit=null;fMsg="Změněno.";renderFood();sync(false);};
   const ed=document.getElementById("edDel");if(ed)ed.onclick=()=>{if(ed.dataset.c!=="1"){ed.dataset.c="1";ed.textContent="Opravdu?";return;}addRecord(Object.assign({},DB[fEdit],{del:true}));fEdit=null;fMsg="Smazáno.";renderFood();sync(false);};
@@ -1551,6 +1566,8 @@ function bindFood2(){
   const sb=document.getElementById("scanBtn");if(sb)sb.onclick=startScan;
   const cg=document.getElementById("codeGo");if(cg)cg.onclick=()=>lookupCode(document.getElementById("codeIn").value.trim());
   const oi=document.getElementById("ocrIn");if(oi)oi.onchange=()=>oi.files[0]&&readLabel(oi.files[0]);
+  const mi=document.getElementById("mealIn");if(mi)mi.onchange=()=>{const file=mi.files[0];if(!file)return;
+    bindMealPhoto(document.getElementById("mealOut"),file,fMeal||mealNow(),async r=>{closeAdd(photoMsg(r));await aiProcessPending();if(view()==="jidlo"&&!fAdd){fMsg=photoMsg(r);renderFood();}});};
 }
 function amInfo(){const el=document.getElementById("amInfo");if(!el||!fSel)return;const m=macros(fSel,num("am-g")||0);
   el.innerHTML=`<div><b>${Math.round(m.kcal)}</b><span>kcal</span></div><div><b>${Math.round(m.b)}</b><span>bílkoviny</span></div><div><b>${Math.round(m.s)}</b><span>sacharidy</span></div><div><b>${Math.round(m.t)}</b><span>tuky</span></div>`;}
@@ -1883,14 +1900,14 @@ function genSteps(r,K,n=1){ // postup pro konkrétní kuchyň a počet porcí, n
   const key=r.n+"|"+[...K].sort().join()+"|"+n;if(gsCache.has(key))return gsCache.get(key);
   const ph=protStep(r.p,r.fl,K,n),ch=r.c.st(K,n);let out=null;
   if(ph&&ch){
-    const vg=r10((r.c.wrap?120:200)*n),V=r.v,salad=V[0]==="zeleninovým salátem",Vn=V[2][0].toUpperCase()+V[2].slice(1);
+    const vg=r10((r.vg||(r.c.wrap?120:200))*n),V=r.v,salad=V[0]==="zeleninovým salátem",Vn=V[2][0].toUpperCase()+V[2].slice(1);
     let vs;
     if(!salad&&ph.eq[0]==="airfryer"&&!r.c.wrap&&(ph.b||1)===1)vs={eq:["airfryer"],min:6,need:[`${V[2]} ${gK(vg)}`],t:`${Vn} (${gK(vg)}) nakrájej na kousky velké jako sousto (mražená zelenina se nekrájí). Když masu zbývá 6 min, otevři koš, přisyp zeleninu, protřepej a peč do konce.`};
     else if(!salad&&K.has("panev")&&K.has("plotna"))vs={eq:["panev"],min:5,need:[`${V[2]} ${gK(vg)}`,`olej ${spoon(.5*n,"lžíce")}`],t:`${Vn} (${gK(vg)}) nakrájej na kousky velké jako sousto. Na pánvi s ${spoon(.5*n,"lžíce")} oleje ji opékej 5 min na stupni 7, osol. Má zůstat lehce křupavá.`};
     else if(!salad&&K.has("mikro"))vs={eq:["mikro"],min:4,need:[`${V[2]} ${gK(vg)}`],t:`${Vn} (${gK(vg)}) dej do misky s 2 lžícemi vody, přikryj talířem a 4 min na plný výkon v mikrovlnce. Sceď a osol.`};
     else vs={eq:[],min:0,need:[`zelenina na salát ${gK(vg)}`],t:`Zeleninu (${gK(vg)}, třeba okurka, rajčata, paprika) nakrájej, osol a zakápni ${spoon(.5*n,"lžíce")} oleje.`};
-    const steps=[ch,ph,vs];if(r.fl.sauce)steps.push(r.fl.sauce(n));
-    const cooked=Math.round(r.p.g*(r.p.raw?1:.75)/10)*10,carbPer=r.c.wrap?"2 tortilly":gK(r10(r.c.g)),vegPer=gK(r10(r.c.wrap?120:200));
+    const steps=[ch,ph,vs];if(r.fl.sauce)steps.push(r.fl.sauce(n));if(r.ex)steps.push(r.ex(n));
+    const cooked=Math.round(r.p.g*(r.p.raw?1:.75)/10)*10,carbPer=r.c.wrap?"2 tortilly":gK(r10(r.c.g)),vegPer=gK(r10(r.vg||(r.c.wrap?120:200)));
     steps.push(r.c.wrap?{need:[],t:`Na každou tortillu dej doprostřed pruh masa a zeleniny (na jednu porci cca ${gK(cooked)} masa a ${vegPer} zeleniny na 2 tortilly). Spodek přehni nahoru, pak zaroluj boky.${n>1?" Na později zabal každou do alobalu.":""}`}
       :{need:[],t:`${n>1?`Rozděl do ${n} krabiček. Do každé`:"Na talíř"} dej cca ${gK(cooked)} masa, ${carbPer} přílohy a ${vegPer} zeleniny.${n>1?" Krabičky nech 30 min vychladnout bez víčka, pak zavři a dej do lednice nebo mrazáku.":""}`});
     const eq=[...new Set(steps.flatMap(s=>s.eq||[]))];
@@ -1900,7 +1917,7 @@ function genSteps(r,K,n=1){ // postup pro konkrétní kuchyň a počet porcí, n
 }
 GEN.forEach(r=>{r.how="";r.req=null;});
 MEALLIB.obed.push(...GEN);MEALLIB.vecere.push(...GEN);
-function mealSteps(m,K){if(m.gen){const s=genSteps(m,K);return s?s.t:null;}return [m.how];}
+function mealSteps(m,K){if(m.gen){const s=genSteps(m,K);return s?s.t:null;}return recipeSteps(m,K,1).t;}
 const mealUsable=(m,K)=>m.gen?!!genSteps(m,K):mealOk(m,K);
 // jednoduchý deterministický generátor náhody podle data, ať je každý den jiný výběr
 function seeded(str){let h=2166136261;for(const ch of str){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);}return ()=>{h^=h<<13;h^=h>>>17;h^=h<<5;return ((h>>>0)%100000)/100000;};}
@@ -1913,6 +1930,7 @@ function sampleOpts(slot,K,d,keep){
 
 // které nádobí recept opravdu použije (podle postupu pro tvoji kuchyň)
 function eqOf(m,K){
+  if(!m.gen&&HAND_MAP[m.n]){const hg=handAsGen(m),gs=hg&&genSteps(hg,K);if(gs)return gs.eq;}
   if(!m.gen){const req=m.req||HAND_REQ[m.n];if(!req)return [];const g=req.find(g=>g.every(x=>K.has(x)))||req[0];return g.filter(x=>x!=="plotna"||g.length===1);}
   const st=genSteps(m,K);return st?st.eq:[];
 }
@@ -1924,6 +1942,84 @@ function matchQuery(x,K,terms){
   if(!terms.length)return true;
   if(!x.hay){const m=x.m,eq=eqOf(m,K);x.hay=norm([m.n,...m.items.map(i=>i[0]),...eq.map(e=>KIT[e]+" "+e),m.tags||"",m.frz?"mrazak zamrazit":"",eq.length?"":"bez vareni studene"].join(" ")).split(/[^a-z0-9]+/);}
   return terms.every(t=>x.hay.some(w=>w.startsWith(t)));
+}
+
+// ručně psaná jídla: buď je složíme ze stejných stavebnic jako generované recepty (přesná čísla, minutky),
+// nebo mají vlastní podrobný postup. n = počet porcí.
+const VEG_ANY=["zeleninou","zeleninu","zelenina (paprika, cuketa, brokolice, i mražená)"];
+const HAND_MAP={
+ "Kuře s rýží a zeleninou":{p:"Kuřecí prsa",c:"Rýže vařená",fl:0},
+ "Těstoviny s tuňákem":{p:"Tuňák",c:"Těstoviny vařené",fl:5},
+ "Kuřecí wrap":{p:"Kuřecí prsa",c:"Tortilla",fl:0,ex:n=>({need:[`cottage ${gK(r10(100*n))}`],t:`Každou tortillu nejdřív potři cottage, na porci ${gK(100)} (celkem ${gK(r10(100*n))}).`})},
+ "Losos s bramborami z airfryeru":{p:"Losos",c:"Brambory",fl:5},
+ "Hovězí bowl s rýží":{p:"Hovězí mleté maso",c:"Rýže vařená",fl:0},
+ "Kuřecí stehna s bramborami z airfryeru":{p:"Kuřecí stehna",c:"Brambory",fl:0},
+ "Treska s rýží a zeleninou":{p:"Treska",c:"Rýže vařená",fl:5},
+ "Krůtí prsa s těstovinami":{p:"Krůtí prsa",c:"Těstoviny vařené",fl:3},
+ "Burrito bowl":{p:"Hovězí mleté maso",c:"Rýže vařená",fl:4,ex:n=>({need:[`cizrna ${gK(r10(100*n))}`,`avokádo ${n<2?"½":fmt(n/2)} ks`],t:`Cizrnu (${gK(r10(100*n))}) sceď a propláchni. Avokádo podél rozkroj kolem pecky, rozkruť, pecku vyndej lžící a dužinu vydlabej a nakrájej. Na porci ½ avokáda.`})}};
+const handGen=new Map();
+function handAsGen(m){
+  if(handGen.has(m.n))return handGen.get(m.n);
+  const h=HAND_MAP[m.n];let r=null;
+  if(h){const P=PROT.find(p=>p.nm===h.p),C=CARB.find(c=>c.f===h.c),g=f=>(m.items.find(i=>i[0]===f)||[])[1];
+    if(P&&C)r={n:m.n+"#",p:{...P,g:g(P.f)||P.g},c:{...C,g:g(C.f)||C.g},fl:FLAV[h.fl],v:VEG_ANY,vg:g("Zelenina mix")||150,ex:h.ex};}
+  handGen.set(m.n,r);return r;
+}
+const pcs=(x,one,few,many)=>`${fmt(x)} ${x===1?one:x<5&&x%1===0?few:many}`;
+const HAND_STEPS={
+ "Ovesná kaše s proteinem a banánem":(K,n)=>{const v=80*n,ml=300*n,mik=K.has("mikro");return [
+   {need:[`ovesné vločky ${gK(v)}`,`mléko ${mlL(ml)}`],min:mik?3:5,t:mik?`Do velké misky (kaše při vaření bublá, ať je miska max do půlky) dej ${gK(v)} vloček a zalij ${mlL(ml)} mléka. Mikrovlnka na plný výkon 2 min, zamíchej a ještě 1 min.${n>1?" Každou porci dělej zvlášť.":""}`
+     :`Do hrnce dej ${gK(v)} vloček a ${mlL(ml)} mléka. Stupeň 6, pořád míchej vařečkou, aby se nepřichytilo. Jakmile začne bublat, stáhni na 3 a míchej ještě 3 min.`},
+   {need:[`protein ${pcs(n,"odměrka","odměrky","odměrek")}`],t:`Nech kaši 1 min vychladnout a pak vmíchej ${pcs(n,"odměrku","odměrky","odměrek")} proteinu (30 g na porci). Do vroucí kaše ne, protein by se srazil do hrudek.`},
+   {need:[`banán ${pcs(n,"ks","ks","ks")}`],t:`Banán (${n} ks) oloupej, nakrájej na kolečka a dej navrch.`}];},
+ "Vajíčka se šunkou a chlebem":(K,n)=>{const e=3*n,pan=K.has("panev")&&K.has("plotna");return [
+   {need:[`vejce ${e} ks`,`sůl špetka`],t:`Vejce (${e} ks) rozklepni do misky, přidej špetku soli a rozšlehej vidličkou, dokud nejsou žloutek a bílek spojené.`},
+   pan?{need:[`olej ${spoon(.5*n,"lžička")}`],min:3,t:`Pánev s ${spoon(.5*n,"lžička")} oleje dej na stupeň 5 a nech 1 min ohřát. Nalij vejce, 20 s nech být a pak je stěrkou pomalu shrnuj od kraje ke středu. Po 2–3 min stáhni, i když jsou ještě trochu lesklá, dojdou na talíři.`}
+      :{need:[],min:8,t:`Vejce nalij do malé misky, která jde do airfryeru (kovová nebo silikonová, vymaž ji kapkou oleje). Airfryer 180 °C 8 min, v půlce zamíchej vidličkou.`},
+   {need:[`chléb ${2*n} krajíce`,`šunka ${gK(100*n)}`,`zelenina ${gK(100*n)}`],t:`K tomu na porci 2 krajíce chleba, balení šunky (100 g) a nakrájenou zeleninu (rajče, okurka, paprika).`}];},
+ "Skyr s müsli a borůvkami":(K,n)=>[{need:[`skyr ${gK(280*n)}`,`müsli ${gK(60*n)}`,`mražené borůvky ${gK(100*n)}`,`med ${spoon(n,"lžička")}`],
+   t:`Borůvky (${gK(100*n)}) dej večer předem do misky do lednice, ráno jsou rozmražené. Pokud spěcháš, 1 min v mikrovlnce. Skyr (2 kelímky na porci) do misky, navrch ${gK(60*n)} müsli, borůvky a ${spoon(n,"lžička")} medu.`}],
+ "Tvaroh s jablkem a ořechy":(K,n)=>[{need:[`tvaroh ${pcs(n,"vanička","vaničky","vaniček")}`,`med ${spoon(n,"lžíce")}`,`jablko ${n} ks`,`ořechy ${gK(30*n)}`],
+   t:`Tvaroh (vanička 250 g na porci) promíchej v misce s ${spoon(n,"lžíce")} medu, ať je krémový. Jablko nakrájej na kostičky (slupku nechej), přimíchej a posyp hrstí ořechů (30 g na porci).`}],
+ "Proteinové lívance z airfryeru":(K,n)=>[
+   {need:[`vločky ${gK(60*n)}`,`vejce ${2*n} ks`,`protein ${pcs(n,"odměrka","odměrky","odměrek")}`,`banán ${n} ks`],t:`Do mixéru dej ${gK(60*n)} vloček, ${2*n} vejce, ${pcs(n,"odměrku","odměrky","odměrek")} proteinu a ${n} oloupaný banán. Mixuj 30 s do hladkého těsta.`},
+   {need:[],min:11,t:`Těsto nalij do silikonových formiček na muffiny, každou do 2/3 (nakynou). Airfryer 170 °C 10–12 min. Hotové jsou, když zapíchnuté párátko vyjde čisté.`},
+   {need:[`skyr ${gK(140*n)}`],t:`Podávej s kelímkem skyru (140 g na porci) místo šlehačky.`}],
+ "Omeleta s mozzarellou v tortille":(K,n)=>[
+   {need:[`zelenina ${gK(100*n)}`,`olej ${spoon(.5*n,"lžíce")}`],min:2,t:`Zeleninu (${gK(100*n)}) nakrájej na malé kostičky. Pánev s ${spoon(.5*n,"lžíce")} oleje na stupeň 6, zeleninu opékej 2 min.`},
+   {need:[`vejce ${3*n} ks`,`mozzarella ${gK(60*n)}`],min:3,t:`${3*n} vejce rozšlehej se špetkou soli a nalij na zeleninu. Nemíchej. Stáhni na 4, přiklop pokličkou a nech 3 min, až je vršek zatuhlý. Navrch natrhej mozzarellu (60 g na porci).`},
+   {need:[`tortilla ${n} ks`],t:`Omeletu posuň stěrkou na tortillu a přelož napůl. Na porci jedna tortilla.`}],
+ "Rýžové chlebíčky s arašídovým máslem":(K,n)=>[{need:[`rýžové chlebíčky ${3*n} ks`,`arašídové máslo ${spoon(2*n,"lžíce")}`,`banán ${n} ks`],t:`${3*n} rýžové chlebíčky namaž arašídovým máslem (2 lžíce na porci, tj. 30 g) a navrch dej banán nakrájený na kolečka.`}],
+ "Cottage s chlebem a zeleninou":(K,n)=>[{need:[`cottage ${gK(200*n)}`,`chléb ${n} krajíc`,`zelenina ${gK(100*n)}`],t:`Krajíc chleba, na něj nebo vedle celý kelímek cottage (200 g na porci). K tomu nakrájenou okurku nebo papriku (100 g). Opepři.`}],
+ "Chléb s vejci a šunkou":(K,n)=>[
+   {need:[`vejce ${2*n} ks`],min:10,t:K.has("hrnec")&&K.has("plotna")?`Vejce (${2*n} ks) dej do hrnce a zalij studenou vodou, aby byla ponořená. Stupeň 9, a jakmile se voda vaří, stáhni na 6 a vař 10 min. Pak je zalij studenou vodou a nech 2 min, líp se loupou.`
+     :`Vejce (${2*n} ks) dej do hrnce nebo misky a zalij vroucí vodou z konvice, aby byla ponořená. Přikryj a nech 13 min. Pak studená voda na 2 min.`},
+   {need:[`chléb ${2*n} krajíce`,`šunka ${gK(60*n)}`],t:`Oloupej, nakrájej na plátky, dej na 2 krajíce chleba se šunkou (60 g). Dá se udělat večer a ráno jen zabalit.`}],
+ "Protein a banán":(K,n)=>[{need:[`protein ${pcs(n,"odměrka","odměrky","odměrek")}`,`voda nebo mléko ${mlL(300*n)}`,`banán ${n} ks`],t:`Do šejkru nalij nejdřív 300 ml vody nebo mléka, pak nasyp 1 odměrku proteinu (v tomhle pořadí se nedělají hrudky). Zavři a 15 s protřepej. K tomu banán.`}],
+ "Tvaroh s medem":(K,n)=>[{need:[`tvaroh ${pcs(n,"vanička","vaničky","vaniček")}`,`med ${spoon(n,"lžíce")}`],t:`Vanička tvarohu (250 g) a lžíce medu, promíchej. Když je moc hustý, přidej lžíci mléka.`}],
+ "Jogurt s müsli":(K,n)=>[{need:[`bílý jogurt ${gK(150*n)}`,`müsli ${gK(60*n)}`],t:`Kelímek bílého jogurtu (150 g) a navrch hrst müsli (60 g, asi 4 lžíce).`}],
+ "Chléb s arašídovým máslem a banánem":(K,n)=>[{need:[`chléb ${2*n} krajíce`,`arašídové máslo ${spoon(2*n,"lžíce")}`,`banán ${n} ks`],t:`2 krajíce chleba namaž arašídovým máslem (2 lžíce, 30 g) a navrch banán na kolečka. Nejlíp 1–2 h před tréninkem.`}],
+ "Vejce natvrdo a chléb":(K,n)=>[
+   {need:[`vejce ${2*n} ks`],min:10,t:`Vejce (${2*n} ks) dej do hrnce, zalij studenou vodou. Stupeň 9, od varu stáhni na 6 a vař 10 min. Zchlaď studenou vodou. Uvař jich víc najednou, v lednici vydrží 5 dní.`},
+   {need:[`chléb ${n} krajíc`],t:`K tomu krajíc chleba a sůl.`}],
+ "Cizrnový salát s tuňákem":(K,n)=>[
+   {need:[`cizrna ${pcs(n,"konzerva","konzervy","konzerv")}`,`tuňák ${pcs(n,"konzerva","konzervy","konzerv")}`],t:`Cizrnu i tuňák sceď v sítku, cizrnu propláchni studenou vodou (pryč s pěnou z konzervy).`},
+   {need:[`zelenina ${gK(150*n)}`,`olej ${spoon(n,"lžíce")}`,`sůl, pepř, citron`],t:`Zeleninu (${gK(150*n)}: okurka, rajčata, paprika, cibule) nakrájej na kostičky. V misce smíchej vše s ${spoon(n,"lžíce")} oleje, solí, pepřem a pár kapkami citronu. Do krabičky na 2 dny v lednici.`}],
+ "Pizza z tortilly":(K,n)=>{const af=K.has("airfryer");return [
+   {need:[`tortilla ${2*n} ks`,`rajčatový protlak ${spoon(2*n,"lžíce")}`],t:`Každou tortillu (2 na porci) potři lžící rajčatového protlaku, až skoro ke kraji. Posyp oreganem.`},
+   {need:[`šunka ${gK(100*n)}`,`zelenina ${gK(100*n)}`,`mozzarella ${gK(125*n)}`],t:`Na každou dej půlku šunky (50 g natrhaných), na tenko nakrájenou zeleninu (paprika, cibule, žampiony) a natrhanou mozzarellu (půl kuličky).`},
+   af?{need:[],min:7,t:`Airfryer 180 °C 6–7 min, vždy jedna tortilla. Náplň ji drží na dně, ať nelítá. Hotová, když je sýr rozpuštěný a kraje zlatavé.`}
+     :{need:[],min:9,t:`Trouba 220 °C (předehřát 10 min), tortilly na plech s papírem, 8–10 min, až je sýr rozpuštěný.`}];},
+ "Omeleta se zeleninou a chlebem":(K,n)=>[
+   {need:[`zelenina ${gK(200*n)}`,`olej ${spoon(.5*n,"lžíce")}`],min:3,t:`Zeleninu (${gK(200*n)}: paprika, cibule, špenát, rajče) nakrájej nadrobno. Pánev s ${spoon(.5*n,"lžíce")} oleje na stupeň 6, zeleninu opékej 3 min, osol.`},
+   {need:[`vejce ${4*n} ks`,`eidam ${gK(40*n)}`],min:4,t:`${4*n} vejce rozšlehej se špetkou soli a nalij na zeleninu${n>1?" (víc porcí dělej po jedné, ať je omeleta tenká)":""}. Nemíchej, stáhni na 4, přiklop a nech 4 min. Navrch nastrouhej nebo natrhej eidam (40 g, 2 plátky) a ještě 1 min pod pokličkou.`},
+   {need:[`chléb ${2*n} krajíce`],t:`Překlop napůl a podávej se 2 krajíci chleba.`}]};
+// jednotný postup pro libovolné jídlo
+function recipeSteps(m,K,n=1){
+  if(m.gen)return genSteps(m,K,n);
+  const g=HAND_MAP[m.n]&&handAsGen(m),gs=g&&genSteps(g,K,n);if(gs)return gs;
+  if(HAND_STEPS[m.n]){const steps=HAND_STEPS[m.n](K,n);return {steps,eq:eqOf(m,K),spices:[],time:Math.max(5,steps.reduce((a,s)=>a+(s.min||0),0)+5),t:steps.map(s=>s.t)};}
+  return {steps:[{t:m.how,need:[]}],eq:eqOf(m,K),spices:[],time:recipeTime(m,K),t:[m.how]};
 }
 
 /* ---------- mrazák ---------- */
@@ -1986,7 +2082,7 @@ function startTimer(btn){
 function renderRecipe(){
   const K=kitchen(),m=mealByName(rSel);if(!m){rSel=null;return renderCook();}
   stopTimers();
-  const n=rPortions,st=m.gen?genSteps(m,K,n):null,steps=st?st.steps:[{t:m.how,need:[]}],t=mealTotals(m),pl=place(),fridge=Math.min(n,3),frz=m.frz?Math.max(0,n-fridge):0,eq=eqOf(m,K);
+  const n=rPortions,st=recipeSteps(m,K,n),steps=st.steps,t=mealTotals(m),pl=place(),fridge=Math.min(n,3),frz=m.frz?Math.max(0,n-fridge):0,eq=eqOf(m,K);
   const pw=k=>k===1?"porci":k<5?"porce":"porcí";
   document.getElementById("hTitle").textContent=m.n;
   document.getElementById("hSub").innerHTML=`<button class="mini" id="rBack">‹ Zpět na recepty</button>`;
@@ -2002,7 +2098,7 @@ function renderRecipe(){
   <section class="card"><b>Než začneš, připrav si</b>
     <div class="eqs big">${[...eq.map(eqLabel),"prkénko","nůž","misku","lžíci a lžičku",...(n>1?[`${n} krabiček`]:[])].map(e=>`<i>${e}</i>`).join("")}</div></section>
   <section class="card"><b>Suroviny na ${n} ${pw(n)}</b><div class="hint">Klepni, co už máš na lince.</div>
-    <div class="hist">${m.items.map(([nm,g])=>{const lbl=m.gen&&nm==="Zelenina mix"?m.v[2][0].toUpperCase()+m.v[2].slice(1)+" (i mražená)":nm==="Olivový olej"?"Olej":nm,q=nm==="Olivový olej"?spoon(g*n/10,"lžíce"):itemQty({n:nm,g:g*n});return `<div class="it tap ${rHave.has(nm)?"have":""}" data-have="${encodeURIComponent(nm)}"><span>${lbl}</span><b>${q}</b></div>`;}).join("")}</div>
+    <div class="hist">${m.items.map(([nm,g])=>{const lbl=nm==="Zelenina mix"?(m.gen?m.v[2][0].toUpperCase()+m.v[2].slice(1)+" (i mražená)":"Zelenina (čerstvá i mražená)"):nm==="Olivový olej"?"Olej":nm,q=nm==="Olivový olej"?spoon(g*n/10,"lžíce"):itemQty({n:nm,g:g*n});return `<div class="it tap ${rHave.has(nm)?"have":""}" data-have="${encodeURIComponent(nm)}"><span>${lbl}</span><b>${q}</b></div>`;}).join("")}</div>
     ${extra.length?`<span class="lbl" style="margin-top:6px">Koření a dochucení (většinou máš doma)</span><div class="hist">${extra.map(x=>{const i=x.search(/ \d|½|¼/);const nm=i>0?x.slice(0,i):x,q=i>0?x.slice(i+1):"";return `<div class="it tap ${rHave.has(nm)?"have":""}" data-have="${encodeURIComponent(nm)}"><span>${nm}</span><b>${q}</b></div>`;}).join("")}</div>`:""}</section>
   <section class="card"><b>Postup krok za krokem</b>
     <div class="steps2">${steps.map((s,i)=>`<div class="step"><div class="num">${i+1}</div><div class="body"><p>${s.t}</p>
@@ -2010,14 +2106,15 @@ function renderRecipe(){
       ${s.min?`<button class="tmr" data-tmr="${i}" data-min="${s.min}">Minutka ${s.min} min</button>`:""}</div></div>`).join("")}</div>
     ${n>1?`<div class="plan"><div>${m.frz?`Do lednice ${fridge} ${pw(fridge)} (vydrží 3 dny), <b>${frz} ${pw(frz)} zamraz</b> (vydrží 3 měsíce). Na krabičku napiš fixou název a datum. Rozmrazuj přes noc v lednici, pak 3 min v mikrovlnce, v půlce promíchej.`:`Tohle se moc nehodí do mrazáku. Uvař tolik, kolik sníš do 2–3 dnů, v lednici vydrží v krabičce.`}</div></div>`:""}</section>
   ${rMsg?`<div class="hint" style="color:var(--ok);text-align:center">${rMsg}</div>`:""}
-  <button class="btn" id="rShop">Suroviny na nákupní seznam</button>
+  <button class="btn" id="rShop">Přidat suroviny na nákupní seznam</button><div class="hint" style="text-align:center">Seznam najdeš v Jídlo → <a href="#jidlo-nakup">Nákup</a>.</div>
   ${n>1&&m.frz?`<button class="btn ghost" id="rCooked">Uvařeno: ${frz} do mrazáku, 1 sním teď</button>`:`<button class="btn ghost" id="rEat">Uvařeno, zapsat porci do deníku</button>`}`;
   document.getElementById("rBack").onclick=()=>{stopTimers();rSel=null;rMsg="";rHave.clear();renderCook();scrollTo(0,0);};
   const setN=v=>{rPortions=Math.max(1,Math.min(14,v));renderRecipe();};
   document.getElementById("rMinus").onclick=()=>setN(n-1);document.getElementById("rPlus").onclick=()=>setN(n+1);document.getElementById("rN").onchange=e=>setN(+e.target.value||1);
   document.querySelectorAll("[data-have]").forEach(el=>el.onclick=()=>{const k=decodeURIComponent(el.dataset.have);rHave.has(k)?rHave.delete(k):rHave.add(k);el.classList.toggle("have");});
   document.querySelectorAll("[data-tmr]").forEach(b=>b.onclick=()=>startTimer(b));
-  document.getElementById("rShop").onclick=()=>{const L=shopList();for(const [nm,g] of m.items){const x=L.items.find(i=>i.n===nm&&!i.manual&&!i.checked);if(x)x.g+=g*n;else L.items.push({id:"s:"+nm+Date.now(),n:nm,g:g*n,checked:false});}LS.set("tr4_shop",L);rMsg="Suroviny jsou na nákupním seznamu.";renderRecipe();};
+  document.getElementById("rShop").onclick=()=>{const L=shopList();for(const [nm,g] of m.items){const x=L.items.find(i=>i.n===nm&&!i.manual&&!i.checked);if(x)x.g+=g*n;else L.items.push({id:"s:"+nm+Date.now(),n:nm,g:g*n,checked:false,rec:1});}LS.set("tr4_shop",L);rMsg=`Přidáno ${m.items.length} surovin na nákupní seznam. <a href="#jidlo-nakup">Otevřít seznam ›</a>`;renderRecipe();
+    const mm=document.getElementById("rShop");if(mm)mm.scrollIntoView({block:"center"});};
   const rc=document.getElementById("rCooked");if(rc)rc.onclick=()=>{const it=freezer().map(x=>({...x})),x=it.find(y=>y.n===m.n);if(x)x.porce+=frz;else it.push({n:m.n,porce:frz,ts:Date.now()});setFreezer(it);
     for(const [nm,g] of m.items){const f=FOODS.find(y=>y.n===nm);logFoodRaw(f,g,mealNow(),0,curSym(),null);}
     Object.keys(localStorage).filter(k=>k.startsWith("tr4_plan_")&&k>"tr4_plan_"+todayISO()).forEach(k=>LS.del(k));rMsg=`Hotovo. ${frz} porcí v mrazáku, jedna zapsaná do deníku.`;renderRecipe();sync(false);};
@@ -2117,7 +2214,7 @@ function buildList(days){
   const agg={};
   for(let k=0;k<days;k++){const d=new Date(Date.now()+k*864e5).toISOString().slice(0,10),p=planFor(d);
     PLAN_SLOTS.forEach((sl,i)=>{if(k===0&&p.logged&&p.logged[sl])return;const m=MEALLIB[sl][p.pick[i]];for(const [n,g] of scaledItems(m,p.k)){if(fixedFood(n))continue;agg[n]=(agg[n]||0)+g;}});}
-  const L=shopList(),keep=L.items.filter(x=>x.manual);
+  const L=shopList(),keep=L.items.filter(x=>x.manual||x.rec);
   L.items=[...Object.entries(agg).map(([n,g])=>({id:"s:"+n,n,g,checked:false})),...keep];L.days=days;LS.set("tr4_shop",L);
 }
 function itemQty(x){
@@ -2359,11 +2456,99 @@ function renderHome(){
   qaInit();
 }
 
+/* ---------- foto jídla: uloží se hned, AI odhadne hodnoty (když není internet, až bude) ---------- */
+// klíč k AI je jen v tomhle telefonu (nesynchronizuje se na Disk)
+const aiCfg=()=>{try{return JSON.parse(localStorage.getItem("tr4_ai"))||{};}catch(e){return {};}};
+const aiReady=()=>!!aiCfg().key;
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("trenink-foto",1);r.onupgradeneeded=()=>r.result.createObjectStore("f");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function photoPut(id,blob){const d=await idb();return new Promise((res,rej)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(blob,id);t.oncomplete=res;t.onerror=()=>rej(t.error);});}
+async function photoGet(id){try{const d=await idb();return await new Promise(res=>{const q=d.transaction("f").objectStore("f").get(id);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});}catch(e){return null;}}
+async function shrink(file,max,q){
+  const bmp=await createImageBitmap(file),k=Math.min(1,max/Math.max(bmp.width,bmp.height)),c=document.createElement("canvas");
+  c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+  return {blob:await new Promise(r=>c.toBlob(r,"image/jpeg",q)),url:c.toDataURL("image/jpeg",q)};
+}
+const blobB64=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(String(f.result).split(",")[1]);f.readAsDataURL(b);});
+const AI_PROMPT=hint=>`Jsi nutriční asistent. Na fotce je jídlo${hint?`, uživatel ho popsal: "${hint}"`:""}. Urči, co to je, odhadni hmotnost porce na fotce a výživové hodnoty celé té porce. Když popis uživatele upřesňuje fotku (druh, množství), věř popisu. Počítej i s olejem a omáčkou, které jsou vidět.
+Odpověz POUZE jedním JSON objektem bez dalšího textu:
+{"nazev":"krátký český název","g":hmotnost porce v gramech,"kcal":kcal celé porce,"b":bílkoviny g,"s":sacharidy g,"t":tuky g,"jistota":"vysoká|střední|nízká","poznamka":"jedna krátká věta česky, co může odhad zkreslit"}`;
+const aiErrMsg=(st,msg)=>st===401||st===403||(st===400&&/key|api_key|API key/i.test(msg||""))?"Klíč k AI nefunguje, zkontroluj ho v Profilu.":st===429?"AI má teď vyčerpaný limit, zkusím to později.":"AI odpověděla chybou: "+(msg||st);
+async function aiAsk(blob,hint){
+  const c=aiCfg(),b64=await blobB64(blob);let txt="";
+  if(c.prov==="claude"){
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":c.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:c.model||"claude-haiku-5-5",max_tokens:400,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},{type:"text",text:AI_PROMPT(hint)}]}]})});
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(aiErrMsg(r.status,j.error&&j.error.message));txt=(j.content||[]).map(x=>x.text||"").join("");
+  }else{
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${c.model||"gemini-flash-latest"}:generateContent?key=${encodeURIComponent(c.key)}`,{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({contents:[{parts:[{text:AI_PROMPT(hint)},{inline_data:{mime_type:"image/jpeg",data:b64}}]}],generationConfig:{responseMimeType:"application/json",temperature:.2}})});
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(aiErrMsg(r.status,j.error&&j.error.message));
+    txt=(((j.candidates||[])[0]||{}).content||{parts:[]}).parts.map(x=>x.text||"").join("");
+  }
+  const mm=txt.match(/\{[\s\S]*\}/);if(!mm)throw new Error("AI nevrátila hodnoty, zkusím to znovu.");
+  const o=JSON.parse(mm[0]),v=k=>Math.max(0,+o[k]||0);
+  if(!(v("kcal")>0))throw new Error("AI jídlo nepoznala. Doplň název nebo hodnoty ručně.");
+  return {nazev:String(o.nazev||hint||"Jídlo z fotky").slice(0,80),g:v("g")||300,kcal:v("kcal"),b:v("b"),s:v("s"),t:v("t"),jistota:String(o.jistota||""),pozn:String(o.poznamka||"").slice(0,200)};
+}
+async function saveFoodPhoto(file,hint,meal){
+  const id="j"+Date.now()+Math.random().toString(36).slice(2,5),big=await shrink(file,1024,.8),th=await shrink(file,160,.6);
+  await photoPut(id,big.blob);
+  const r={v:4,typ:"jidlo",id,ts:Date.now(),date:curDay(),meal:meal||mealNow(),fid:"foto",name:hint||"Jídlo z fotky",g:0,ml:false,kcal:0,b:0,tk:0,s:0,caf:0,price:0,cur:curSym(),mc:"jidlo",supp:null,pending:1,thumb:th.url,hint:hint||""};
+  addRecord(r);return r;
+}
+let aiRunning=false;
+async function aiProcessPending(){
+  if(aiRunning||!navigator.onLine||!aiReady())return;aiRunning=true;let changed=false;
+  try{for(const e of records().filter(r=>r.typ==="jidlo"&&r.pending)){
+    const blob=await photoGet(e.id);if(!blob)continue; // fotka je v jiném telefonu
+    try{const a=await aiAsk(blob,e.hint);addRecord({...e,ts:Date.now(),pending:0,aiErr:"",name:e.hint||a.nazev,g:Math.round(a.g),kcal:a.kcal,b:a.b,tk:a.t,s:a.s,ai:{nazev:a.nazev,jistota:a.jistota,pozn:a.pozn}});changed=true;}
+    catch(err){addRecord({...e,aiErr:err.message});changed=true;if(/Klíč|limit/.test(err.message))break;}
+  }}finally{aiRunning=false;}
+  if(changed){sync(false);const v=view();if(v==="dnes")renderHome();else if(v==="jidlo"&&!fAdd&&!fEdit)renderFood();}
+}
+window.addEventListener("online",()=>aiProcessPending());
+// formulář po vyfocení: náhled, název, uložit
+function mealPhotoHTML(url){
+  return `<div class="qasel"><img src="${url}" alt="Fotka jídla"><div class="hint">${aiReady()?(navigator.onLine?"AI odhadne, co to je a kolik to má.":"Jsi offline. Fotka se uloží a AI ji odhadne, až budeš online."):"AI zatím nemáš zapnutou (Profil → AI z fotky). Fotka a název se uloží, hodnoty můžeš doplnit ručně."}</div></div>
+    <input type="text" id="mpName" placeholder="Co to je? Třeba svíčková, 4 knedlíky" aria-label="Název jídla" autocomplete="off">
+    <div class="hint">Název pomůže AI, hlavně u omáček, množství a toho, co pod tím není vidět.</div>
+    <button class="btn" id="mpSave">Uložit jídlo</button>`;
+}
+function bindMealPhoto(box,file,meal,done){
+  box.innerHTML=mealPhotoHTML(URL.createObjectURL(file));
+  const b=document.getElementById("mpSave");
+  b.onclick=async()=>{b.disabled=true;b.textContent="Ukládám…";
+    try{const r=await saveFoodPhoto(file,document.getElementById("mpName").value.trim(),meal);sync(false);done(r);}
+    catch(e){b.disabled=false;b.textContent="Uložit jídlo";box.insertAdjacentHTML("beforeend",`<div class="hint" style="color:var(--warn)">Fotku se nepodařilo uložit: ${e.message}</div>`);}};
+}
+function photoMsg(r){const e=DB[r.id];if(!e)return "";
+  if(!e.pending)return `Zapsáno: ${e.name}, cca ${Math.round(e.kcal)} kcal a ${Math.round(e.b)} g bílkovin (odhad AI${e.ai&&e.ai.jistota?", jistota "+e.ai.jistota:""}).`;
+  if(e.aiErr)return `Fotka uložena. ${e.aiErr}`;
+  return aiReady()?"Fotka uložena, AI ji odhadne, až budeš online.":"Fotka uložena. Hodnoty doplň ťuknutím na jídlo v deníku, nebo si v Profilu zapni AI.";
+}
+function aiProfileHTML(){
+  const c=aiCfg();
+  return `<section class="card"><h2>AI z fotky jídla</h2>
+    <div class="hint">Vyfotíš talíř a AI odhadne, co to je, kolik to váží a kolik to má kalorií a bílkovin. Klíč zůstává jen v tomhle telefonu, na Disk se neposílá.</div>
+    <div class="fld"><span>Služba</span><select id="ai-prov"><option value="gemini" ${c.prov!=="claude"?"selected":""}>Google Gemini (má limit zdarma)</option><option value="claude" ${c.prov==="claude"?"selected":""}>Claude od Anthropic (placené, haléře za fotku)</option></select></div>
+    ${field("ai-key","Klíč (API key)",c.key||"","password",'autocomplete="off"')}
+    <div class="hint">Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> → Create API key. Zdarma, ale Google může fotky z bezplatné verze použít ke zlepšování svých služeb.<br>
+      Claude: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys, je potřeba dobít kredit.</div>
+    <div class="row"><button class="btn ghost" id="aiSave" style="flex:1;width:auto">Uložit klíč</button>${c.key?`<button class="btn ghost" id="aiDel" style="width:auto">Smazat</button>`:""}</div>
+    <div id="aiMsg" class="hint"></div></section>`;
+}
+function bindAiProfile(){
+  document.getElementById("aiSave").onclick=()=>{const key=document.getElementById("ai-key").value.trim(),prov=document.getElementById("ai-prov").value;
+    try{localStorage.setItem("tr4_ai",JSON.stringify({prov,key}));}catch(e){}
+    const m=document.getElementById("aiMsg");m.style.color="var(--ok)";m.textContent=key?"Uloženo. Fotky, které čekají, teď odhadnu.":"Klíč smazán.";aiProcessPending();};
+  const d=document.getElementById("aiDel");if(d)d.onclick=()=>{try{localStorage.removeItem("tr4_ai");}catch(e){}renderProfile();};
+}
+
 /* ---------- rychlý zápis na Dnes: hledání s našeptávačem, kód, foto ---------- */
 FOODS.push(F("Párek v listovém těstě",320,9,22,22,["ks",90]),F("Croissant",410,8,21,45,["ks",60]),F("Bageta se šunkou a sýrem",250,11,9,30,["ks",200]),
  F("Pizza rohlík",270,10,9,36,["ks",100]),F("Kobliha",380,6,18,48,["ks",70]),F("Loupák",330,8,9,54,["ks",60]),F("Sendvič se šunkou a sýrem",240,11,9,28,["ks",180]),
  F("Klobása",300,13,27,1,["ks",120]),F("Sýrový rohlík",330,12,12,44,["ks",80]),F("Langoš",330,7,17,38,["ks",200]),F("Smažený sýr v housce",310,13,17,27,["ks",230]));
-let qaQ="",qaSel=null,qaN=1,qaOn=[],qaBusy=false,qaMsg="",qaUndo=null,qaT=null,qaErr="",qaList=[];
+let qaMode=null,qaQ="",qaSel=null,qaN=1,qaOn=[],qaBusy=false,qaMsg="",qaUndo=null,qaT=null,qaErr="",qaList=[];
 const qaCache=new Map();
 const OFF_FIELDS="code,product_name,product_name_cs,product_name_pl,product_name_de,brands,quantity,serving_quantity,image_front_small_url,nutriments";
 function offToFood(p){
@@ -2399,6 +2584,9 @@ const qaThumb=f=>f.img?`<img src="${f.img}" alt="" loading="lazy">`:`<i class="q
 const qaUnitKcal=f=>Math.round(f.kcal*f.u[1]/100);
 function qaLastPrice(f){const l=records().filter(r=>r.typ==="jidlo"&&r.fid===f.id&&r.price).pop();return l?Math.round(l.price*f.u[1]/l.g*10)/10:(f.price||"");}
 function qaBodyHTML(){
+  if(qaMode==="foto")return `<div class="row" style="gap:8px;flex-wrap:nowrap"><label class="btn" style="flex:1">Jídlo na talíři<input type="file" id="qaMeal" accept="image/*" capture="environment" hidden></label>
+    <label class="btn ghost" style="flex:1">Tabulka na obalu<input type="file" id="qaPhoto" accept="image/*" capture="environment" hidden></label></div>
+    <div class="hint">Jídlo: vyfotíš, napíšeš název a AI odhadne kalorie${aiReady()?"":" (zapneš v Profilu)"}. Tabulka: přečtu hodnoty z obalu.</div>`;
   if(qaSel){const f=qaSel;
     if(f.missing)return `<div class="qasel">${qaThumb(f)}<div><b>${f.n}</b><div class="hint" style="color:var(--warn)">V databázi chybí výživové hodnoty.</div></div></div>
       <label class="btn">Vyfotit tabulku na obalu<input type="file" id="qaTab" accept="image/*" capture="environment" hidden></label><button class="mini" id="qaX">Zrušit</button>`;
@@ -2426,6 +2614,9 @@ async function qaFetchCode(code){
   return {id:"c:"+code,code,n:"Výrobek "+code,missing:1,u:["100 g",100],kcal:0,b:0,t:0,s:0};
 }
 function qaBind(){
+  const qm=document.getElementById("qaMeal");if(qm)qm.onchange=()=>{const file=qm.files[0];if(!file)return;
+    bindMealPhoto(document.getElementById("qaBody"),file,mealNow(),async r=>{qaMode=null;qaUndo=r.id;qaMsg=photoMsg(r);renderHome();await aiProcessPending();qaMsg=photoMsg(r);if(view()==="dnes")renderHome();});};
+  const qp=document.getElementById("qaPhoto");if(qp)qp.onchange=()=>{const file=qp.files[0];if(!file)return;qaMode=null;toFoodAdd(async()=>{fTab="foto";renderFood();readLabel(file);});};
   document.querySelectorAll("[data-qa]").forEach(b=>b.onclick=()=>{qaSel=qaList[+b.dataset.qa];qaN=1;qaRender();});
   const x=document.getElementById("qaX");if(x)x.onclick=()=>{qaSel=null;qaRender();};
   const un=document.getElementById("qaUndo");if(un)un.onclick=()=>{if(DB[qaUndo])addRecord(Object.assign({},DB[qaUndo],{del:true,ts:Date.now()}));qaUndo=null;qaMsg="Vráceno.";renderHome();sync(false);};
@@ -2448,14 +2639,14 @@ function qaCardHTML(){
   return `<section class="card" id="qaCard" style="--accent:var(--plate-green)"><div class="row between"><span class="lbl">Rychle zapsat</span><span class="hint">${MEALS[mealNow()]}</span></div>
     <div class="qabar"><input type="search" id="qaIn" placeholder="Co jsi koupil nebo snědl?" value="${qaQ.replace(/"/g,"&quot;")}" autocomplete="off" aria-label="Hledat výrobek">
       <button class="arrow" id="qaScan" aria-label="Skenovat čárový kód">${ICON.code}</button>
-      <label class="arrow" aria-label="Vyfotit obal">${ICON.photo}<input type="file" id="qaPhoto" accept="image/*" capture="environment" hidden></label></div>
+      <button class="arrow" id="qaCam" aria-label="Vyfotit">${ICON.photo}</button></div>
     <div id="scanBox"></div><div id="qaBody">${qaBodyHTML()}</div></section>`;
 }
 function qaInit(){
   const i=document.getElementById("qaIn");if(!i)return;
-  i.oninput=()=>{qaQ=i.value;qaSel=null;qaMsg="";qaUndo=null;qaSearch(qaQ);qaRender();};
+  i.oninput=()=>{qaQ=i.value;qaSel=null;qaMode=null;qaMsg="";qaUndo=null;qaSearch(qaQ);qaRender();};
   document.getElementById("qaScan").onclick=()=>{qaSel=null;startScanFor(async code=>{qaQ="";i.value="";document.getElementById("qaBody").innerHTML=`<div class="hint">Hledám ${code}…</div>`;qaSel=await qaFetchCode(code);qaN=1;qaRender();});};
-  const ph=document.getElementById("qaPhoto");ph.onchange=()=>{const file=ph.files[0];if(!file)return;toFoodAdd(async()=>{fTab="foto";renderFood();readLabel(file);});};
+  document.getElementById("qaCam").onclick=()=>{stopScan();qaSel=null;qaMode=qaMode==="foto"?null:"foto";qaRender();};
   qaBind();
 }
 
@@ -2517,7 +2708,7 @@ if("serviceWorker" in navigator){
     const n=document.getElementById("updNote");n.hidden=false;n.innerHTML=`Je nová verze appky. <button class="mini" id="updBtn">Obnovit</button>`;document.getElementById("updBtn").onclick=()=>location.reload();});
 }
 const fromGoogle=oauthReturn();
-render();sync(fromGoogle&&!!tok());
+render();sync(fromGoogle&&!!tok());setTimeout(aiProcessPending,2000);
 
 </script>
 </body>
