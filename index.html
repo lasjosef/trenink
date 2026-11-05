@@ -552,7 +552,7 @@ let unsynced=new Set(LS.get("tr4_unsynced",[]));
 let PROFILE=LS.get("tr4_profile",null);
 const saveDB=()=>{LS.set("tr4_records",DB);LS.set("tr4_unsynced",[...unsynced]);};
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
-function records(){return Object.values(DB).filter(r=>r&&r.id&&!r.del&&r.typ!=="profil"&&r.typ!=="den").sort((a,b)=>a.ts-b.ts);}
+function records(){return Object.values(DB).filter(r=>r&&r.id&&!r.del&&r.typ!=="profil"&&r.typ!=="den"&&r.typ!=="nastaveni").sort((a,b)=>a.ts-b.ts);}
 const workouts=()=>records().filter(r=>r.typ==="trenink");
 const mikros=()=>records().filter(r=>r.typ==="mikro");
 function weighins(){return records().filter(r=>r.typ==="vaha").map(r=>({ts:r.ts,kg:r.kg}));}
@@ -759,7 +759,8 @@ function oauthReturn(){ // návrat z Googlu: #access_token=…&state=… nebo #e
   const back=(saved&&saved.back)||"#dnes";
   if(p.get("access_token")&&saved&&p.get("state")===saved.st){
     LS.set("tr4_token",{v:p.get("access_token"),exp:Date.now()+(+p.get("expires_in")||3600)*1000});LS.set("tr4_linked",true);
-  }else{syncState="err";syncErr=p.get("error")==="access_denied"?"Přístup k Disku jsi nepovolil":"Přihlášení se nepovedlo";}
+  }else if(/interaction_required|login_required|consent_required|account_selection_required/.test(p.get("error")||"")){syncState="needlogin";}
+  else{syncState="err";syncErr=p.get("error")==="access_denied"?"Přístup k Disku jsi nepovolil":"Přihlášení se nepovedlo";}
   history.replaceState(null,"",REDIRECT+back);return true;
 }
 async function g(url,opt={}){
@@ -791,7 +792,7 @@ function multipart(meta,content){
   const b="trb"+Math.random().toString(36).slice(2);
   return {headers:{"Content-Type":"multipart/related; boundary="+b},body:`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(content)}\r\n--${b}--`};
 }
-function fileName(r){if(r.id==="profil")return "profil.json";if(r.typ==="jidlo")return `jidlo ${r.date} ${r.id}.json`;if(r.typ==="vydaj")return `vydaj ${r.date} ${r.id}.json`;if(r.typ==="potravina")return `potravina ${r.id}.json`;if(r.typ==="den")return `den ${r.date}.json`;if(r.typ==="mrazak")return "mrazak.json";if(r.typ==="vaha")return `vaha ${r.date}.json`;if(r.typ==="mikro")return `kliky ${r.date} ${r.id}.json`;return `${r.date} ${r.nazev}.json`;}
+function fileName(r){if(r.id==="profil")return "profil.json";if(r.typ==="jidlo")return `jidlo ${r.date} ${r.id}.json`;if(r.typ==="vydaj")return `vydaj ${r.date} ${r.id}.json`;if(r.typ==="potravina")return `potravina ${r.id}.json`;if(r.typ==="den")return `den ${r.date}.json`;if(r.typ==="mrazak")return "mrazak.json";if(r.typ==="vaha")return `vaha ${r.date}.json`;if(r.typ==="mikro")return `kliky ${r.date} ${r.id}.json`;if(r.id==="aikey")return "ai-klic.json";return `${r.date} ${r.nazev}.json`;}
 async function payload(r){const key=encOn()?await loadKey():null;return key?await encJSON(r,key):r;}
 async function sync(interactive){
   if(!useDrive()){syncState=PROFILE&&PROFILE.uloziste==="google"&&!CLIENT_ID?"nocfg":"local";renderStatus();return;}
@@ -814,29 +815,33 @@ async function sync(interactive){
       }
       if(!byRid.klic&&LS.get("tr4_keyfile",null)){const m=multipart({name:"klic.json",parents:[fid],mimeType:"application/json",appProperties:{rid:"klic"}},LS.get("tr4_keyfile"));await g(`${UP}/files?uploadType=multipart&fields=id`,{method:"POST",...m});}
     }
-    // odeslat nové
+    // odeslat nové (rmod = kdy jsme soubor na Disku naposledy viděli/zapsali, ať poznáme změny z jiného zařízení)
+    const rmod=LS.get("tr4_rmod",{});
     for(const id of [...unsynced]){
       const r=DB[id];if(!r){unsynced.delete(id);continue;}
       const body=await payload(r);
-      if(byRid[id]){await g(`${UP}/files/${byRid[id].id}?uploadType=media`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});} // změna nebo smazání
-      else if(!byRid[id]){const m=multipart({name:fileName(r),parents:[fid],mimeType:"application/json",appProperties:{rid:id}},body);await g(`${UP}/files?uploadType=multipart&fields=id`,{method:"POST",...m});}
-      unsynced.delete(id);saveDB();
+      let res;
+      if(byRid[id]){res=await (await g(`${UP}/files/${byRid[id].id}?uploadType=media&fields=id,modifiedTime`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();} // změna nebo smazání
+      else{const m=multipart({name:fileName(r),parents:[fid],mimeType:"application/json",appProperties:{rid:id}},body);res=await (await g(`${UP}/files?uploadType=multipart&fields=id,modifiedTime`,{method:"POST",...m})).json();}
+      if(res&&res.modifiedTime)rmod[id]=res.modifiedTime;
+      unsynced.delete(id);saveDB();LS.set("tr4_rmod",rmod);
     }
     // stáhnout, co v telefonu chybí (jiný telefon, obnova)
     let pulled=0;const key=await loadKey();
     for(const f of remote){
       const rid=f.appProperties&&f.appProperties.rid;if(!rid||rid==="klic")continue;
-      if(rid!=="profil"&&DB[rid]&&!(DB[rid].typ==="den"&&new Date(f.modifiedTime).getTime()>DB[rid].ts+5000))continue;
-      if(rid==="profil"&&PROFILE&&PROFILE.ts&&new Date(f.modifiedTime).getTime()<PROFILE.ts+5000)continue;
+      if(rmod[rid]===f.modifiedTime||unsynced.has(rid))continue; // beze změny, nebo tady máme novější neodeslanou verzi
+      if(rid==="profil"&&PROFILE&&PROFILE.ts&&new Date(f.modifiedTime).getTime()<PROFILE.ts+5000){rmod[rid]=f.modifiedTime;continue;}
       try{let rec=await (await g(`${API}/files/${f.id}?alt=media`)).json();
         if(rec&&rec.enc){if(!key)continue;rec=await decJSON(rec,key);}
         if(!rec||!rec.id)continue;
+        rmod[rid]=f.modifiedTime;
         if(rid==="profil"){if(!PROFILE||(rec.data&&rec.data.ts>(PROFILE.ts||0))){PROFILE=rec.data;LS.set("tr4_profile",PROFILE);DB.profil=rec;pulled++;}}
-        else{DB[rec.id]=rec;pulled++;}
+        else if(!DB[rec.id]||JSON.stringify(DB[rec.id])!==JSON.stringify(rec)){DB[rec.id]=rec;pulled++;}
       }catch(e){}
     }
-    saveDB();LS.set("tr4_lastsync",Date.now());syncState="ok";
-    if(pulled)render();
+    saveDB();LS.set("tr4_rmod",rmod);LS.set("tr4_lastsync",Date.now());syncState="ok";
+    if(pulled&&!busyTyping())render();
   }catch(e){
     if(e&&e.auth)syncState="needlogin";else{syncState="err";syncErr=(e&&e.message)||"Synchronizace selhala";}
   }
@@ -859,6 +864,22 @@ function renderStatus(){
 }
 window.addEventListener("online",()=>sync(false));
 window.addEventListener("offline",()=>{syncState="offline";renderStatus();});
+// nepřekreslovat, když uživatel zrovna píše do políčka
+const busyTyping=()=>{const a=document.activeElement;return a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&a.type!=="checkbox";};
+// stáhnout změny z jiných zařízení, když se appka vrátí do popředí a pak každé 2 minuty
+let lastPull=0;
+function pullSoon(){if(document.visibilityState!=="visible"||!useDrive()||!tok())return;if(Date.now()-lastPull<20000)return;lastPull=Date.now();sync(false);}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){if(useDrive()&&!tok()&&navigator.onLine&&LS.get("tr4_linked",false))silentLogin();else pullSoon();}});
+setInterval(pullSoon,120000);
+// přihlášení bez klikání: Google vrátí nový token hned, když je uživatel přihlášený (vydrží hodinu)
+function silentLogin(){
+  if(sessionStorage.getItem("tr4_silent")&&Date.now()-+sessionStorage.getItem("tr4_silent")<30*60e3)return false;
+  if(draft&&draft.started&&!draft.back&&draftHasData()&&view()==="trenink")return false; // během tréninku nikam neodcházet
+  sessionStorage.setItem("tr4_silent",Date.now());
+  const st=Math.random().toString(36).slice(2);LS.set("tr4_oauth_state",{st,back:location.hash||"#dnes"});
+  const q=new URLSearchParams({client_id:CLIENT_ID,redirect_uri:REDIRECT,response_type:"token",scope:"https://www.googleapis.com/auth/drive.file",state:st,prompt:"none",include_granted_scopes:"true"});
+  location.href="https://accounts.google.com/o/oauth2/v2/auth?"+q.toString();return true;
+}
 async function store(r){addRecord(r);await sync(false);return useDrive()&&!unsynced.has(r.id);}
 /* ---------- rozpracovaný trénink ----------
  série: [kg, opakování, náročnost e/h/l, ručně změněná váha, odškrtnuto] */
@@ -2499,7 +2520,7 @@ function renderHome(){
 
 /* ---------- foto jídla: uloží se hned, AI odhadne hodnoty (když není internet, až bude) ---------- */
 // klíč k AI je jen v tomhle telefonu (nesynchronizuje se na Disk)
-const aiCfg=()=>{try{return JSON.parse(localStorage.getItem("tr4_ai"))||{};}catch(e){return {};}};
+const aiCfg=()=>{const r=DB.aikey;if(r&&!r.del&&r.key)return {prov:r.prov,key:r.key};try{return JSON.parse(localStorage.getItem("tr4_ai"))||{};}catch(e){return {};}};
 const aiReady=()=>!!aiCfg().key;
 function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("trenink-foto",1);r.onupgradeneeded=()=>r.result.createObjectStore("f");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
 async function photoPut(id,blob){const d=await idb();return new Promise((res,rej)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(blob,id);t.oncomplete=res;t.onerror=()=>rej(t.error);});}
@@ -2570,7 +2591,7 @@ function photoMsg(r){const e=DB[r.id];if(!e)return "";
 function aiProfileHTML(){
   const c=aiCfg();
   return `<section class="card"><h2>AI z fotky jídla</h2>
-    <div class="hint">Vyfotíš talíř a AI odhadne, co to je, kolik to váží a kolik to má kalorií a bílkovin. Klíč zůstává jen v tomhle telefonu, na Disk se neposílá.</div>
+    <div class="hint">Vyfotíš talíř a AI odhadne, co to je, kolik to váží a kolik to má kalorií a bílkovin. Stačí ho zadat jednou, přes tvůj Google Disk se dostane i do dalších zařízení.</div>
     <div class="fld"><span>Služba</span><select id="ai-prov"><option value="gemini" ${c.prov!=="claude"?"selected":""}>Google Gemini (má limit zdarma)</option><option value="claude" ${c.prov==="claude"?"selected":""}>Claude od Anthropic (placené, haléře za fotku)</option></select></div>
     ${field("ai-key","Klíč (API key)",c.key||"","password",'autocomplete="off"')}
     <div class="hint">Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> → Create API key. Zdarma, ale Google může fotky z bezplatné verze použít ke zlepšování svých služeb.<br>
@@ -2580,9 +2601,10 @@ function aiProfileHTML(){
 }
 function bindAiProfile(){
   document.getElementById("aiSave").onclick=()=>{const key=document.getElementById("ai-key").value.trim(),prov=document.getElementById("ai-prov").value;
-    try{localStorage.setItem("tr4_ai",JSON.stringify({prov,key}));}catch(e){}
+    try{localStorage.removeItem("tr4_ai");}catch(e){}
+    addRecord({v:4,typ:"nastaveni",id:"aikey",ts:Date.now(),prov,key,del:!key});sync(false);
     const m=document.getElementById("aiMsg");m.style.color="var(--ok)";m.textContent=key?"Uloženo. Fotky, které čekají, teď odhadnu.":"Klíč smazán.";aiProcessPending();};
-  const d=document.getElementById("aiDel");if(d)d.onclick=()=>{try{localStorage.removeItem("tr4_ai");}catch(e){}renderProfile();};
+  const d=document.getElementById("aiDel");if(d)d.onclick=()=>{try{localStorage.removeItem("tr4_ai");}catch(e){}if(DB.aikey)addRecord({...DB.aikey,key:"",del:true,ts:Date.now()});sync(false);renderProfile();};
 }
 
 /* ---------- rychlý zápis na Dnes: hledání s našeptávačem, kód, foto ---------- */
@@ -2781,7 +2803,9 @@ if("serviceWorker" in navigator){
     const n=document.getElementById("updNote");n.hidden=false;n.innerHTML=`Je nová verze appky. <button class="mini" id="updBtn">Obnovit</button>`;document.getElementById("updBtn").onclick=()=>location.reload();});
 }
 const fromGoogle=oauthReturn();
-render();sync(fromGoogle&&!!tok());setTimeout(aiProcessPending,2000);
+try{const old=JSON.parse(localStorage.getItem("tr4_ai")||"null");if(old&&old.key&&!DB.aikey){addRecord({v:4,typ:"nastaveni",id:"aikey",ts:Date.now(),prov:old.prov||"gemini",key:old.key});localStorage.removeItem("tr4_ai");}}catch(e){}
+if(!fromGoogle&&PROFILE&&useDrive()&&!tok()&&navigator.onLine&&LS.get("tr4_linked",false)&&silentLogin()){/* odchází na Google pro nový token */}
+else{render();sync(!!tok());lastPull=Date.now();setTimeout(aiProcessPending,2000);}
 
 </script>
 </body>

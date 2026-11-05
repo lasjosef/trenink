@@ -20,4 +20,5 @@ Běží na GitHub Pages: https://lasjosef.github.io/trenink (Android, Chrome, �
 - Foto jídla s AI: fotka v IndexedDB (`photoPut`), záznam `fid:"foto"` s náhledem `thumb` a `pending`; `aiProcessPending` po startu/online pošle fotku + název do Gemini (`gemini-flash-latest`) nebo Claude API, klíč jen v `localStorage` `tr4_ai` (nesynchronizuje se). Ruční jídla mají podrobné kroky (`HAND_MAP` přes stavebnice, `HAND_STEPS`), vše přes `recipeSteps`. Do Vaření nepatří bistro/obchod (`isRecipe`).
 - Dnes → „Pohyb mimo trénink“ (`moveHTML`, `MOVES`): kliky, shyby, dřepy… jedním klepnutím, záznam `typ:"mikro"` s `n` a `reps`, souhrn týdne ve Statistikách.
 - Nové zařízení: na úvodní obrazovce „Přihlásit přes Google a načíst data“ (`restoreFromDrive`, `tr4_restore`), umí i heslo k šifrování.
+- Sync obousměrně: `tr4_rmod` (modifiedTime z Disku po rid) → stahuje i změny z jiných zařízení; pull při návratu do popředí a každé 2 min (`pullSoon`); tiché obnovení tokenu `silentLogin` (prompt=none). AI klíč je záznam `aikey` (typ nastaveni) a synchronizuje se.
 - Další nápady: přímé napojení banky (Fio API), export.
