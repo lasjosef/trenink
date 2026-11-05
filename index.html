@@ -1197,17 +1197,57 @@ function bindChoices(p,rerender){
   document.querySelectorAll(".pchip[data-plate]").forEach(b=>b.onclick=()=>{const k=+b.dataset.plate;p.kotouce=p.kotouce.includes(k)?p.kotouce.filter(x=>x!==k):[...p.kotouce,k];rerender();});
   ["f-sifra","f-rot"].forEach(id=>{const el=document.getElementById(id);if(el)el.onchange=()=>{if(id==="f-sifra")p.sifrovat=el.checked;else p.rot.on=el.checked;rerender();};});
 }
+// obnova na novém zařízení (počítač, nový telefon): přihlásit Googlem a stáhnout všechno z Disku
+async function restoreFromDrive(pass){
+  const q=encodeURIComponent("name = 'Trénink' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+  const fl=(await (await g(`${API}/files?q=${q}&fields=files(id)`)).json()).files||[];
+  if(!fl.length)throw new Error("Na tomhle Google účtu jsem nenašel složku Trénink. Přihlásil ses stejným účtem jako v telefonu?");
+  let found=null;
+  for(const f of fl){const rem=await listRemote(f.id),by={};rem.forEach(x=>{const rid=x.appProperties&&x.appProperties.rid;if(rid)by[rid]=x;});if(by.profil){found={fid:f.id,by,n:rem.length};break;}}
+  if(!found)throw new Error("Složka Trénink na Disku je, ale nejsou v ní tvoje data. Zálohuj nejdřív v telefonu (Profil → Zálohovat teď).");
+  let rec=await (await g(`${API}/files/${found.by.profil.id}?alt=media`)).json();
+  if(rec&&rec.enc){
+    if(!(await loadKey())){
+      if(!found.by.klic)throw new Error("Data jsou zašifrovaná, ale na Disku chybí klíč.");
+      if(!pass)return {needPass:true};
+      const kf=await (await g(`${API}/files/${found.by.klic.id}?alt=media`)).json();
+      if(!(await unlockKey(pass,kf)))return {needPass:true,bad:true};
+    }
+    rec=await decJSON(rec,await loadKey());
+  }
+  if(!rec||!rec.data)throw new Error("Profil na Disku se nepodařilo přečíst.");
+  PROFILE=rec.data;LS.set("tr4_profile",PROFILE);DB.profil=rec;saveDB();LS.set("tr4_folder",found.fid);
+  return {ok:true,n:found.n};
+}
+async function runRestore(pass){
+  const out=document.getElementById("rsOut");if(!out)return;
+  out.innerHTML=`<div class="hint">Hledám tvoje data na Disku…</div>`;
+  try{const r=await restoreFromDrive(pass);
+    if(r.needPass){out.innerHTML=`<div class="hint" style="color:${r.bad?"var(--warn)":"inherit"}">${r.bad?"Špatné heslo, zkus to znovu.":"Data jsou zašifrovaná. Zadej heslo, které jsi nastavil v telefonu."}</div>
+      <div class="bwrow"><input type="password" id="rsPass" autocomplete="current-password" aria-label="Heslo" style="flex:1;max-width:none"><button class="mini" id="rsGo">Odemknout</button></div>`;
+      document.getElementById("rsGo").onclick=()=>runRestore(document.getElementById("rsPass").value);return;}
+    LS.del("tr4_restore");LS.del("tr4_ob");OB=null;
+    out.innerHTML=`<div class="hint" style="color:var(--ok)">Nalezeno ${r.n} záznamů. Načítám je, chvíli to trvá…</div>`;
+    document.querySelector("nav").hidden=false;location.hash="#dnes";await sync(false);render();
+  }catch(e){LS.del("tr4_restore");
+    out.innerHTML=`<div class="hint" style="color:var(--warn)">${e&&e.auth?"Přihlášení vypršelo, zkus to znovu.":(e&&e.message)||"Načtení se nepovedlo."}</div>`;}
+}
 function renderStart(){
   if(!OB)OB={step:0,p:defaultProfile()};
   const {step,p}=OB;
   document.getElementById("chips").hidden=true;document.querySelector("nav").hidden=true;
   document.getElementById("hTitle").textContent=STEPS[step];
   document.getElementById("hSub").textContent=`Nastavení ${step+1} z ${STEPS.length}`;
-  document.getElementById("view").innerHTML=`<div class="stepdots">${STEPS.map((_,i)=>`<i class="${i<=step?"on":""}"></i>`).join("")}</div>
+  document.getElementById("view").innerHTML=`${step===0&&CLIENT_ID?`<section class="card" style="--accent:var(--plate-blue)"><b>Už appku používáš v telefonu?</b>
+      <div class="hint">Přihlas se stejným Google účtem a všechno se načte z tvého Disku: trénink, jídlo, peníze i nastavení.</div>
+      <button class="btn" id="obRestore">Přihlásit přes Google a načíst data</button><div id="rsOut"></div></section>
+    <div class="hint" style="text-align:center">Nebo začni od začátku:</div>`:""}<div class="stepdots">${STEPS.map((_,i)=>`<i class="${i<=step?"on":""}"></i>`).join("")}</div>
     <section class="card">${stepHTML(p,step)}<div id="obErr" class="hint" style="color:var(--warn)"></div></section>
     <div class="row between">${step?`<button class="btn ghost" id="obBack">Zpět</button>`:"<span></span>"}<button class="btn" id="obNext" style="width:auto;flex:1;margin-left:8px">${step===STEPS.length-1?"Hotovo, jdeme na to":"Pokračovat"}</button></div>`;
   const re=()=>{readStep(p,OB.step);LS.set("tr4_ob",OB);renderStart();};
   bindChoices(p,re);
+  const rb=document.getElementById("obRestore");if(rb){rb.onclick=()=>{LS.set("tr4_restore",true);if(tok())runRestore();else login();};
+    if(LS.get("tr4_restore",false)){if(tok())runRestore();else{LS.del("tr4_restore");document.getElementById("rsOut").innerHTML=`<div class="hint" style="color:var(--warn)">${syncErr||"Přihlášení se nepovedlo."} Zkus to znovu.</div>`;}}}
   const bk=document.getElementById("obBack");if(bk)bk.onclick=()=>{readStep(p,step);OB.step--;LS.set("tr4_ob",OB);renderStart();};
   document.getElementById("obNext").onclick=async()=>{
     readStep(p,step);const err=await validateStep(p,step);if(err){document.getElementById("obErr").textContent=err;return;}
