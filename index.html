@@ -1938,9 +1938,11 @@ function eatPortion(name,meal){
 
 /* ---------- obrazovka Vaření ---------- */
 let rSel=null,rPortions=4,rFilter="vse",rQuery="",rShow=30,rMsg="";
+// do Vaření patří jen to, co si opravdu připravíš: ne bistro, restaurace, jídlo od rodičů ani věci koupené hotové
+const isRecipe=m=>!m.items.some(([n])=>fixedFood(n))&&!/bistro|obchod/.test(m.tags||"");
 function recipeList(){
   const K=kitchen(),seen=new Set(),out=[];
-  for(const sl of ["obed","vecere","snidane","svacina","svacina2"])for(const m of MEALLIB[sl]){if(seen.has(m.n))continue;seen.add(m.n);if(mealUsable(m,K))out.push({m,sl});}
+  for(const sl of ["obed","vecere","snidane","svacina","svacina2"])for(const m of MEALLIB[sl]){if(seen.has(m.n))continue;seen.add(m.n);if(isRecipe(m)&&mealUsable(m,K))out.push({m,sl});}
   return out;
 }
 function recipeTime(m,K){if(m.gen){const s=genSteps(m,K);return s?s.time:0;}return /rychle|bez vareni|obchod/.test(m.tags)?5:/airfryer/.test(m.tags)?25:20;}
