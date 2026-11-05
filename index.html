@@ -1283,10 +1283,10 @@ function renderStats(){
   const models=names.map(n=>[n,model(n)]).filter(x=>x[1]);
   if(!statEx||!models.some(x=>x[0]===statEx))statEx=models.length?models[0][0]:null;
   const sm=statEx&&model(statEx),pts=sm?sm.ests.map(e=>({t:e.ts,v:e.v})):[];
-  const wi=weighins().map(x=>({t:x.ts,v:x.kg})),mk=mikros(),mkWeek=mk.filter(r=>r.ts>=weekStart(Date.now())).reduce((a,r)=>a+r.reps,0);
+  const wi=weighins().map(x=>({t:x.ts,v:x.kg})),mk=mikros(),mkWeek=mk.filter(r=>r.ts>=weekStart(Date.now())&&r.n==="Kliky").reduce((a,r)=>a+r.reps,0);
   const ids=[...ORDERS.gym,...ORDERS.bw,"K"];
   document.getElementById("view").innerHTML=`
-  <div class="kpis"><div class="kpi"><b>${weekCount(main,0)}/${WEEK_GOAL[mode]}</b><span>tento týden</span></div><div class="kpi"><b>${streak}</b><span>týdnů v kuse (3+)</span></div><div class="kpi"><b>${mkWeek}</b><span>kliků po troškách za týden</span></div></div>
+  <div class="kpis"><div class="kpi"><b>${weekCount(main,0)}/${WEEK_GOAL[mode]}</b><span>tento týden</span></div><div class="kpi"><b>${streak}</b><span>týdnů v kuse (3+)</span></div><div class="kpi"><b>${mkWeek}</b><span>kliků mimo trénink za týden</span></div></div>${(()=>{const by={};mk.filter(r=>r.ts>=weekStart(Date.now())).forEach(r=>by[r.n]=(by[r.n]||0)+r.reps);const e=Object.entries(by);return e.length?`<div class="hint">Mimo trénink tento týden: ${e.map(([n,v])=>v+" "+mvWord(n)).join(" · ")}</div>`:"";})()}
   <section class="card"><div class="row between"><h2>Dny tréninku</h2><button class="mini" id="backBtn">${backOpen?"Zavřít":"+ Zapsat starší trénink"}</button></div>
     ${backOpen?`<div class="bwrow" style="flex-wrap:wrap"><input type="date" id="backDate" max="${todayISO()}" value="${todayISO()}" aria-label="Datum">
       <select id="backT" aria-label="Který trénink">${ids.map(id=>`<option value="${id}">${PROGRAM[id].n}</option>`).join("")}</select><button class="mini" id="backGo">Otevřít zápis</button></div>`:""}
@@ -2434,6 +2434,7 @@ function renderHome(){
     <h2 style="font-size:26px">${inDraft?"Pokračovat: "+PROGRAM[draft.tid].n:doneToday.length?"Dnes hotovo":"Na řadě "+PROGRAM[nx].n}</h2>
     <div class="row" style="gap:5px;flex-wrap:nowrap">${weekPips}</div>
     <div class="hint">${wk} z ${goal} tréninků tento týden${doneToday.length?", další "+PROGRAM[nx].n:", zabere cca "+workoutMin(nx)+" min"}${miss.length&&miss.length<9?". Ještě chybí "+miss.join(", ").toLowerCase()+".":"."}</div></a>
+  ${moveHTML()}
   <section class="card"><a class="row between link" href="#jidlo"><span class="lbl">Jídlo</span><span class="chev">›</span></a>
     <div class="hero" style="--accent:var(--plate-green)">${plateRing(tot.kcal,T.kcal,"z "+T.kcal+" kcal","var(--plate-green)")}
       <div>${bar(tot.b,T.b,"Bílkoviny","g","pro")}${quickFoods().length?`<div class="quick">${quickFoods().slice(0,3).map(e=>`<button class="qf" data-again="${e.id}">+ ${e.name}<span>${fmt(e.g)} ${e.ml?"ml":"g"}</span></button>`).join("")}</div>`:`<a class="mini" href="#jidlo">Zapsat první jídlo</a>`}</div></div>
@@ -2453,7 +2454,7 @@ function renderHome(){
   bindShops(renderHome);const sn=document.getElementById("shopSnooze");if(sn)sn.onclick=()=>{LS.set("tr4_shops_snooze",t);renderHome();};
   document.querySelectorAll("[data-again]").forEach(b=>b.onclick=()=>{const e=DB[b.dataset.again],f=foodById(e.fid)||{id:e.fid,n:e.name,kcal:e.kcal/e.g*100,b:e.b/e.g*100,t:e.tk/e.g*100,s:e.s/e.g*100,u:["porce",e.g],mc:e.mc,ml:e.ml};
     fDate=null;logFood(f,e.g,mealNow(),e.price,e.cur);renderHome();document.getElementById("hMsg").textContent="Přidáno: "+e.name;sync(false);});
-  qaInit();
+  qaInit();bindMove();
 }
 
 /* ---------- foto jídla: uloží se hned, AI odhadne hodnoty (když není internet, až bude) ---------- */
@@ -2650,12 +2651,44 @@ function qaInit(){
   qaBind();
 }
 
+/* ---------- pohyb mimo trénink: jdu kolem parku a dám 20 shybů ---------- */
+const MOVES=[["Kliky","kliků"],["Shyby","shybů"],["Dřepy","dřepů"],["Dipy","dipů"],["Výpady","výpadů"],["Sklapovačky","sklapovaček"],["Plank","s planku",1],["Burpees","burpees"]];
+let mvSel=null,mvMsg="",mvUndo=null,mvOwn=false;
+const mvWord=n=>{const m=MOVES.find(x=>x[0]===n);return m?m[1]:n.toLowerCase();};
+function moveHTML(){
+  const t=todayISO(),all=mikros(),list=all.filter(r=>r.date===t),by={};list.forEach(r=>by[r.n]=(by[r.n]||0)+r.reps);
+  const own=[...new Set(all.map(r=>r.n).filter(n=>!MOVES.some(m=>m[0]===n)))].slice(-4);
+  const names=[...MOVES.map(m=>m[0]),...own];
+  let body="";
+  if(mvSel){const last=all.filter(r=>r.n===mvSel).pop(),sec=(MOVES.find(m=>m[0]===mvSel)||[])[2],q=sec?[30,45,60,90]:[10,15,20,30,50];
+    body=`<div class="grp"><span class="lbl">${mvSel}: kolik ${sec?"sekund":"opakování"}</span>
+      <div class="quick">${q.map(v=>`<button class="qf" data-mvq="${v}">${v}${sec?" s":""}</button>`).join("")}${last&&!q.includes(last.reps)?`<button class="qf" data-mvq="${last.reps}">${last.reps}${sec?" s":""}<span>minule</span></button>`:""}</div>
+      <div class="bwrow"><input type="number" inputmode="numeric" id="mvIn" placeholder="${last?last.reps:sec?45:20}" aria-label="Počet"><button class="mini" id="mvGo">Zapsat</button><button class="mini" id="mvX">Zrušit</button></div></div>`;}
+  else if(mvOwn)body=`<div class="bwrow"><input type="text" id="mvName" placeholder="Název cviku, třeba Pistol dřep" aria-label="Název cviku" style="flex:1;max-width:none"><button class="mini" id="mvOwnGo">Dál</button></div>`;
+  return `<section class="card" id="mvCard" style="--accent:var(--plate-red)"><div class="row between"><span class="lbl">Pohyb mimo trénink</span><span class="hint">${Object.keys(by).length?"dnes":""}</span></div>
+    ${Object.keys(by).length?`<div><b>${Object.entries(by).map(([n,v])=>`${v} ${mvWord(n)}`).join(" · ")}</b></div>`:`<div class="hint">Jdeš kolem hrazdy? Dej pár shybů a zapiš je jedním klepnutím.</div>`}
+    <div class="quick hscroll">${names.map(n=>`<button class="qf" data-mv="${encodeURIComponent(n)}" aria-pressed="${mvSel===n}">${n}</button>`).join("")}<button class="qf" id="mvOwnBtn">+ Jiný cvik</button></div>
+    ${body}${mvMsg?`<div class="row between" style="flex-wrap:nowrap"><span class="hint" style="color:var(--ok)">${mvMsg}</span>${mvUndo?`<button class="mini" id="mvUndo">Vrátit</button>`:""}</div>`:""}</section>`;
+}
+function bindMove(){
+  const re=()=>{const c=document.getElementById("mvCard");if(c){c.outerHTML=moveHTML();bindMove();}};
+  document.querySelectorAll("[data-mv]").forEach(b=>b.onclick=()=>{const n=decodeURIComponent(b.dataset.mv);mvSel=mvSel===n?null:n;mvOwn=false;mvMsg="";re();const i=document.getElementById("mvIn");if(i)i.focus();});
+  const ob=document.getElementById("mvOwnBtn");if(ob)ob.onclick=()=>{mvOwn=!mvOwn;mvSel=null;re();const i=document.getElementById("mvName");if(i)i.focus();};
+  const og=document.getElementById("mvOwnGo");if(og)og.onclick=()=>{const v=document.getElementById("mvName").value.trim();if(!v)return;mvOwn=false;mvSel=v[0].toUpperCase()+v.slice(1);re();};
+  const save=v=>{if(!(v>0))return;const now=Date.now(),r={v:4,typ:"mikro",id:"m"+now,ts:now,date:todayISO(),n:mvSel,reps:Math.round(v)};addRecord(r);sync(false);
+    const sec=(MOVES.find(m=>m[0]===mvSel)||[])[2];mvMsg=`Zapsáno: ${r.reps}${sec?" s":""} ${sec?"planku":mvWord(mvSel)}.`;mvUndo=r.id;mvSel=null;re();};
+  document.querySelectorAll("[data-mvq]").forEach(b=>b.onclick=()=>save(+b.dataset.mvq));
+  const g=document.getElementById("mvGo");if(g)g.onclick=()=>{const i=document.getElementById("mvIn");save(parseInt(i.value||i.placeholder));};
+  const x=document.getElementById("mvX");if(x)x.onclick=()=>{mvSel=null;re();};
+  const u=document.getElementById("mvUndo");if(u)u.onclick=()=>{if(DB[mvUndo])addRecord({...DB[mvUndo],del:true,ts:Date.now()});mvUndo=null;mvMsg="Vráceno.";sync(false);re();};
+}
+
 /* ---------- swipe mezi záložkami ---------- */
 const TABS=["dnes","trenink","jidlo","penize","profil"];
 const tabOf=v=>["statistiky","program"].includes(v)?"trenink":v.startsWith("jidlo")?"jidlo":v;
 (function(){
   let x0=null,y0=0,t0=0;
-  const blocked=el=>el.closest("[data-swipe],[data-pswipe],.chips,.tabs,.quick,.subnav,input,select,textarea,.stepper,video,.sets,.eff,.cal,nav,.glasses,.supps,details[open] .hist,#qaCard");
+  const blocked=el=>el.closest("[data-swipe],[data-pswipe],.chips,.tabs,.quick,.subnav,input,select,textarea,.stepper,video,.sets,.eff,.cal,nav,.glasses,.supps,details[open] .hist,#qaCard,#mvCard");
   document.addEventListener("touchstart",e=>{if(e.touches.length!==1||blocked(e.target)||view()==="start"){x0=null;return;}x0=e.touches[0].clientX;y0=e.touches[0].clientY;t0=Date.now();},{passive:true});
   document.addEventListener("touchend",e=>{
     if(x0===null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;
